@@ -237,7 +237,7 @@ KL.Goal = class Goal {
 
   /** The ball hit the frame: a hard knock makes the net twitch. */
   bump(ball) {
-    if (!this.back || this.sprite.anims.isPlaying || ball.body.velocity.length() < 260) return;
+    if (!this.back || this.sprite.anims.isPlaying || ball.body.velocity.length() < KL.TUNING.goal.bumpMin) return;
     this.sprite.play(`${this.key}/bump`);
   }
 };
