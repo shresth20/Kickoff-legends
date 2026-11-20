@@ -177,6 +177,19 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     if (dv > 400) this.omega *= 0.7; // a hard knock scrubs some spin off
   }
 
+  /**
+   * The sound of an impact (the match's AudioDirector plays it, on BALL_IMPACT): what it hit — the turf
+   * (it came down), a wall (the back of a goal) or else a body — and how hard. A strike never gets here
+   * (kick() resets the previous velocity), and the goal frame rings on its own (FRAME_HIT).
+   */
+  hear(dvx, dvy) {
+    const dv = Math.hypot(dvx, dvy);
+    if (dv < 120 || !this.scene.bus) return;
+    const b = this.body;
+    const surface = b.blocked.down && Math.abs(dvy) >= Math.abs(dvx) * 0.5 ? 'turf' : b.blocked.left || b.blocked.right || b.blocked.up ? 'wall' : 'body';
+    this.scene.bus.emit('BALL_IMPACT', { dv, surface, x: this.x, y: this.y });
+  }
+
   nudge(dir, amount) {
     this.body.velocity.x += dir * amount;
     this.body.velocity.y -= amount * 0.4;
@@ -256,7 +269,9 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
 
     // impacts: any sudden change of velocity since the last frame (bounces, posts, bodies, walls).
     // After the spring step, so a fresh impact shows its full squash on its first frame.
-    this.impact(v.x - this.prevVx, v.y - this.prevVy);
+    const dvx = v.x - this.prevVx, dvy = v.y - this.prevVy;
+    this.impact(dvx, dvy);
+    if (dt > 0) this.hear(dvx, dvy);
     this.prevVx = v.x;
     this.prevVy = v.y;
 

@@ -13,7 +13,6 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
 
   create() {
     const W = KL.TUNING.world;
-    const T = KL.TUNING;
     this.bus = new KL.EventBus();
     this.rules = new KL.MatchRules();
     this.stats = { shots: [0, 0], headers: [0, 0], supers: [0, 0] };
@@ -54,13 +53,15 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     // and can't stand on each other's heads (see playerContact)
     this.players.forEach((p) => (p.body.pushable = false));
     this.physics.add.collider(this.players[0], this.players[1], null, this.playerContact, this);
-    for (const g of this.goals) {
-      this.physics.add.collider(this.ball, g.statics, () => {
-        KL.audio?.play('bump');
-        g.bump(this.ball);
+    this.goals.forEach((g, i) => {
+      // the crossbar rings / the back post shakes the net, as hard as the ball's velocity changed
+      this.physics.add.collider(this.ball, g.statics, (ball, part) => {
+        const v = ball.body.velocity;
+        this.bus.emit('FRAME_HIT', { goal: i, part: part === g.bar ? 'bar' : 'post', x: ball.x, y: ball.y, dv: Math.hypot(v.x - ball.prevVx, v.y - ball.prevVy) });
+        g.bump(ball);
       });
       this.physics.add.collider(this.players, g.statics);
-    }
+    });
 
     // input sources: Player 1's keys + on-screen controller (drawn and touched in the HUD); the CPU
     const c = KL.Save.settings.controls;
@@ -93,27 +94,17 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     KL.fadeIn(this);
   }
 
+  /** Match stats from the bus, and the match's sound: KL.AudioDirector (js/audio/Director.js) reads
+   * the bus and the live state and drives the crowd, effects, voices, commentary and music. */
   wireAudio() {
-    const a = KL.audio;
-    if (!a) return;
-    const b = this.bus;
     this.audioOffs = [
-      b.on('KICK', (e) => {
-        a.play({ super: 'super_fire', header: 'header', high: 'kick_long', clash: 'kick_soft' }[e.kind] ?? 'kick_hard');
+      this.bus.on('KICK', (e) => {
         if (e.kind === 'header') this.stats.headers[e.player]++;
         else if (e.kind === 'super') this.stats.supers[e.player]++;
         else if (e.kind !== 'clash') this.stats.shots[e.player]++;
       }),
-      b.on('LAND', () => a.play('land')),
-      b.on('HURT', () => a.play('hurt')),
-      b.on('GOAL', () => {
-        a.play('goal_horn');
-        a.crowdSwell();
-      }),
-      b.on('WHISTLE', () => a.play('whistle')),
-      b.on('SUPER_READY', () => a.play('super_ready')),
-      b.on('SUPER_FIRED', () => a.play('super_charge')),
     ];
+    this.audioDirector = KL.audio ? new KL.AudioDirector(this, this.bus) : null;
   }
 
   kickoff(first) {
@@ -189,7 +180,6 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
         this.kickoff(false);
       } else if (ev.type === 'clock') {
         this.bus.emit('CLOCK', { secondsLeft: ev.secondsLeft, suddenDeath: this.rules.state.suddenDeath });
-        if (ev.secondsLeft <= 3 && ev.secondsLeft > 0) KL.audio?.play('countdown');
       } else if (ev.type === 'suddendeath') {
         this.kickoff(false);
         this.rules.state.phase = 'suddendeath_countdown';
@@ -356,11 +346,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
       if (Math.abs(bb.velocity.x) < Math.abs(push)) bb.velocity.x = push;
     }
     if (onHead && bb.velocity.y > -B.headPop) bb.velocity.y = Math.min(bb.velocity.y, -B.headPop); // juggle off the head
-    if (Math.abs(vn) > 160 && this.time.now - (this._lastBodySfx || 0) > 120) {
-      this._lastBodySfx = this.time.now;
-      KL.audio?.play('bump');
-    }
-    ball.lastTouchKind = 'body';
+    ball.lastTouchKind = 'body'; // (its sound: Ball.syncRig hears the change of velocity)
   }
 
   onGoal(scorer, goalIdx) {
@@ -459,6 +445,8 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     KL.View.events.off('orientation', this.onOrientation);
     this.game.events.off(Phaser.Core.Events.HIDDEN, this.autoPause);
     this.audioOffs?.forEach((o) => o());
+    this.audioDirector?.destroy();
+    this.audioDirector = null;
     this.bus?.clear();
     this.events.off(Phaser.Scenes.Events.PRE_UPDATE, this.preStep, this);
     this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.postStep, this);

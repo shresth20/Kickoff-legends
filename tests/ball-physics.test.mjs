@@ -38,10 +38,10 @@ test('J from your own box still rolls into the far goal', () => {
   assert.ok(end.x > 950, `rolled ${end.x.toFixed(0)} px`);
 });
 
-test('K — the long kick climbs high and carries far, fast', () => {
+test('K — the long kick climbs over a rival and carries far, fast', () => {
   const { apex, landed, marks } = strike('high', { marks: [400] });
-  assert.ok(apex > 210 && apex < 320, `apex ${apex.toFixed(0)} px: over a jumping player and the bar`);
-  assert.ok(landed.x > 750 && landed.x < 1000, `first lands ${landed.x.toFixed(0)} px away`);
+  assert.ok(apex > 180 && apex < 240, `apex ${apex.toFixed(0)} px: over a rival, about bar height`);
+  assert.ok(landed.x > 880 && landed.x < 1050, `first lands ${landed.x.toFixed(0)} px away`);
   assert.ok(landed.t < 1.4, `in the air ${landed.t.toFixed(2)} s`);
   assert.ok(marks[400].t < 0.6, `400 px out in ${marks[400].t.toFixed(2)} s`);
 });

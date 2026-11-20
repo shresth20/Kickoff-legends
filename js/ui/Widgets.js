@@ -125,8 +125,11 @@ window.KL = window.KL || {};
       super(scene, x, y);
       scene.add.existing(this);
       this.kind = opts.kind || 'primary';
-      this.w = Math.round(opts.width || (this.kind === 'icon' ? 64 : this.kind === 'secondary' ? 220 : 300));
-      this.h = Math.round(opts.height || (this.kind === 'icon' ? 64 : this.kind === 'secondary' ? 60 : 76));
+      // the face size is bw × bh, never w × h: every Phaser game object has a `w` (its 4th position
+      // coordinate) that setPosition(x, y) resets to 0, so a button placed after it was built (the
+      // HUD's pause and reactions, the corner buttons…) repainted 0 px wide on its next hover / press
+      this.bw = Math.round(opts.width || (this.kind === 'icon' ? 64 : this.kind === 'secondary' ? 220 : 300));
+      this.bh = Math.round(opts.height || (this.kind === 'icon' ? 64 : this.kind === 'secondary' ? 60 : 76));
       this.onClick = onClick;
       this.disabled = !!opts.disabled;
       this.focused = false;
@@ -138,11 +141,11 @@ window.KL = window.KL || {};
       this.baseScale = 1;
       if (opts.iconSpec) {
         // an icon painted in code (KL.Paint spec), e.g. the full-screen brackets
-        this.iconSize = Math.round(this.kind === 'icon' ? this.h * 0.66 : Math.min(36, this.h * 0.58));
+        this.iconSize = Math.round(this.kind === 'icon' ? this.bh * 0.66 : Math.min(36, this.bh * 0.58));
         this.icon = KL.Paint.place(scene, 0, 0, opts.iconSpec);
         this.add(this.icon);
       } else if (opts.icon && hasFrame(scene, opts.icon)) {
-        this.iconSize = Math.round(this.kind === 'icon' ? this.h * 0.66 : Math.min(36, this.h * 0.58));
+        this.iconSize = Math.round(this.kind === 'icon' ? this.bh * 0.66 : Math.min(36, this.bh * 0.58));
         this.icon = scene.add.image(0, 0, 'ui', opts.icon);
         KL.fit(this.icon, this.iconSize, this.iconSize);
         this.add(this.icon);
@@ -152,7 +155,7 @@ window.KL = window.KL || {};
         this.add(this.label);
       }
       this.layout();
-      this.setSize(this.w, this.h);
+      this.setSize(this.bw, this.bh);
       this.setInteractive({ useHandCursor: true });
       this.on('pointerover', () => ((this.hover = true), this.redraw()));
       this.on('pointerout', () => ((this.hover = false), (this.pressed = false), this.redraw()));
@@ -167,11 +170,6 @@ window.KL = window.KL || {};
 
     setFocused(on) {
       this.focused = on;
-      this.redraw();
-      return this;
-    }
-    setDisabled(on) {
-      this.disabled = on;
       this.redraw();
       return this;
     }
@@ -202,12 +200,12 @@ window.KL = window.KL || {};
 
     /** Centre icon + label as one group; shrink the label if it would touch the rounded ends. */
     layout() {
-      const pad = this.kind === 'icon' ? 6 : Math.max(16, this.h * 0.36);
+      const pad = this.kind === 'icon' ? 6 : Math.max(16, this.bh * 0.36);
       const iconW = this.icon ? this.iconSize : 0;
-      const gap = this.icon && this.label ? Math.round(this.h * 0.16) : 0;
+      const gap = this.icon && this.label ? Math.round(this.bh * 0.16) : 0;
       let labelW = 0;
       if (this.label) {
-        KL.fitText(this.label, this.w - pad * 2 - iconW - gap);
+        KL.fitText(this.label, this.bw - pad * 2 - iconW - gap);
         labelW = KL.textWidth(this.label) * this.label.scaleX;
       }
       const left = -(iconW + gap + labelW) / 2;
@@ -227,7 +225,7 @@ window.KL = window.KL || {};
 
     redraw() {
       const state = this.disabled ? 3 : this.pressed ? 2 : this.hover || this.focused ? 1 : 0;
-      const spec = KL.Paint.button(this.scene, this.kind, state, this.w, this.h);
+      const spec = KL.Paint.button(this.scene, this.kind, state, this.bw, this.bh);
       this.face.setTexture(spec.key).setOrigin(spec.ox, spec.oy).setScale(1 / KL.UIRES);
       const dy = state === 2 ? spec.lip - 1 : 0; // contents ride down with the pressed face
       if (this.label) {
@@ -245,8 +243,8 @@ window.KL = window.KL || {};
     constructor(scene, x, y, w, h, opts = {}) {
       super(scene, x, y);
       scene.add.existing(this);
-      this.w = w = Math.round(w);
-      this.h = h = Math.round(h);
+      this.bw = w = Math.round(w); // not this.w: see KL.Button
+      this.bh = h = Math.round(h);
       this.add(KL.Paint.place(scene, 0, 0, KL.Paint.panel(scene, w, h)));
       if (opts.title) {
         this.title = KL.displayText(scene, 0, -h / 2 + 50, opts.title, 44);
@@ -288,8 +286,10 @@ window.KL = window.KL || {};
       this.redraw();
     }
     set(v, fire) {
+      const was = this.value;
       this.value = Phaser.Math.Clamp(v, 0, 1);
       this.redraw();
+      if (fire && Math.abs(this.value - was) > 0.001) KL.audio?.play('ui_slider', { value: this.value });
       if (fire) this.onChange?.(this.value);
       return this;
     }
@@ -350,7 +350,7 @@ window.KL = window.KL || {};
       this.value = !this.value;
       this.redraw();
       this.onChange?.(this.value);
-      KL.audio?.play('ui_click');
+      KL.audio?.play('ui_toggle', { on: this.value });
     }
     setFocused(on) {
       this.focused = on;
@@ -400,6 +400,7 @@ window.KL = window.KL || {};
     if (scene._leaving) return;
     scene._leaving = true;
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => (scene._leaving = false)); // scene instances are reused
+    KL.audio?.play('ui_whoosh');
     scene.cameras.main.fadeOut(ms, 15, 18, 48);
     scene.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => scene.scene.start(key, data));
   };
@@ -433,7 +434,10 @@ window.KL = window.KL || {};
         }
       });
       this.items.forEach((it, i) => {
-        it.on?.('pointerover', () => this.focus(i));
+        it.on?.('pointerover', () => {
+          if (i !== this.index) KL.audio?.play('ui_hover');
+          this.focus(i);
+        });
       });
       this.focus(0);
       scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.destroy());

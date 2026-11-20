@@ -16,7 +16,6 @@ KL.ResultScene = class ResultScene extends Phaser.Scene {
     const cfg = r.config;
     KL.Stadium.build(this, { night: cfg.night, parallax: false });
     V.cover(this, 0x0f1230, 0.55).setDepth(5);
-    KL.audio?.playMusic('menu');
 
     const defs = [KL.CHARACTERS.find((c) => c.id === cfg.p1Char), KL.CHARACTERS.find((c) => c.id === cfg.p2Char)];
     for (const def of defs) KL.ensureCharacterAnims(this.anims, def.id);
@@ -100,7 +99,13 @@ KL.ResultScene = class ResultScene extends Phaser.Scene {
       const ck = Phaser.Math.Clamp((bottom - top - 8) / 324, 0.85, u);
       card.setPosition(W.width / 2, Math.min(374, (top + bottom) / 2 + 6)).setScale(ck);
     });
-    KL.audio?.play(bannerKey === 'lose' ? 'lose' : 'win');
+    // a fanfare for a win (a gentle fall for a loss), then that mood's take on the theme; the stand
+    // applauds the legends off
+    const A = KL.audio;
+    if (bannerKey !== 'draw') A?.play(bannerKey === 'win' ? 'jingle_win' : 'jingle_lose');
+    A?.playMusic({ win: 'victory', lose: 'defeat', draw: 'menu' }[bannerKey], { delay: bannerKey === 'draw' ? 0.3 : 2.3 });
+    A?.crowd?.react('applause', { dur: 6, gain: 0.5 });
+    if (w !== null) A?.voices?.say(defs[w].id, w === 0 ? 'cheer' : 'ready', { x: w === 0 ? 175 : W.width - 175, delay: 0.5, gain: 0.8 });
     KL.fadeIn(this);
   }
 };

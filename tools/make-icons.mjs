@@ -42,7 +42,7 @@ async function icon(size, fill, name) {
   const { height: h } = await sharp(art).metadata();
   await sharp(bg)
     .composite([{ input: art, left: Math.round((size - w) / 2), top: Math.round((size - h) / 2) }])
-    .png({ compressionLevel: 9 })
+    .png({ compressionLevel: 9, adaptiveFiltering: true }) // lossless; PNG because iOS home-screen icons must be
     .toFile(resolve(out, name));
   console.log(`wrote assets/images/icons/${name}`);
 }

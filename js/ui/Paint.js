@@ -344,9 +344,11 @@ window.KL = window.KL || {};
     const M = Math.ceil(size * 0.16), S = size + M * 2;
     const key = paint(scene, `kl:icon:fullscreen:${size}:${exit ? 1 : 0}`, S, S, (ctx) => {
       ctx.translate(S / 2, S / 2 - size * 0.03);
-      const t = size * 0.17, ink = size * 0.085, drop = size * 0.07;
+      // enter: corners at the edge, arms in · exit: corners a third of the way in, arms out to the
+      // edge, a little thinner so the four brackets stay apart and read as brackets (not a blob)
+      const t = size * (exit ? 0.13 : 0.17), ink = size * 0.085, drop = size * 0.07;
       const h = size / 2 - t / 2 - ink;
-      const a = exit ? h * 0.24 : h, arm = h * 0.62;
+      const a = exit ? h * 0.34 : h, arm = exit ? h * 0.66 : h * 0.62;
       const brackets = () => {
         ctx.beginPath();
         for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {

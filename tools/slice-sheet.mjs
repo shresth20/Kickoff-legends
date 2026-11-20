@@ -391,7 +391,9 @@ async function emitStrip(img, regions, spec, outPrefix, names) {
   // common baseline: the lowest pixel across the strip (feet on the floor frames)
   const baseline = Math.max(...boxes.map((b) => b.y + b.h));
   const feetY = Math.round(cellH * (0.5 + fill / 2)); // bottom edge of the fill area
+  const packed = []; // [slot on the sheet, atlas item] — spec.skip frames are measured above but not packed
   for (let i = 0; i < boxes.length; i++) {
+    if (spec.skip?.includes(i)) continue;
     const b = boxes[i];
     const w = Math.max(1, Math.round(b.w * scale)), h = Math.max(1, Math.round(b.h * scale));
     let offX = Math.round(cellW / 2 - w / 2);
@@ -403,14 +405,11 @@ async function emitStrip(img, regions, spec, outPrefix, names) {
     offX = Math.max(0, Math.min(cellW - w, offX));
     const buffer = await crop(img, b).resize(w, h, { kernel: 'lanczos3' }).png().toBuffer();
     atlas.add({ name: names?.[i] ?? (boxes.length === 1 && spec.kind === 'single' ? outPrefix : `${outPrefix}/${pad2(i)}`), buffer, w, h, cellW, cellH, offX, offY });
+    packed.push([i, atlas.items[atlas.items.length - 1]]);
   }
   if (PREVIEW) {
     const n = boxes.length;
-    const comps = [];
-    for (let i = 0; i < n; i++) {
-      const it = atlas.items[atlas.items.length - n + i];
-      comps.push({ input: it.buffer, left: i * cellW + it.offX, top: it.offY });
-    }
+    const comps = packed.map(([i, it]) => ({ input: it.buffer, left: i * cellW + it.offX, top: it.offY }));
     // floor line at the feet baseline helps spot size/baseline jumps between strips
     const floor = Buffer.from(`<svg width="${cellW * n}" height="${cellH}"><line x1="0" y1="${feetY}" x2="${cellW * n}" y2="${feetY}" stroke="#00ffff" stroke-width="1"/></svg>`);
     await sharp({ create: { width: cellW * n, height: cellH, channels: 4, background: { r: 255, g: 0, b: 255, alpha: 1 } } })
@@ -757,7 +756,7 @@ const out = {};
 for (const [k, a] of Object.entries(atlases)) if (a.items.length) out[k] = await a.write();
 // browser-tab icon from the first ball frame
 const ballFrame = atlases.props.items.find((it) => it.name === 'ball/00');
-if (ballFrame) await sharp(ballFrame.buffer).resize(64, 64, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toFile(resolve(root, 'assets/images/favicon.png'));
+if (ballFrame) await sharp(ballFrame.buffer).resize(64, 64, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png({ compressionLevel: 9, adaptiveFiltering: true }).toFile(resolve(root, 'assets/images/favicon.png'));
 // merge with any previously written descriptors so partial runs don't wipe other atlases
 const descFile = join(atlasDir, 'atlases.js');
 let prev = {};

@@ -33,14 +33,17 @@ KL.STADIUM_LAYOUT = {
   // step: the top of the front step, in front of the back row and behind the front row
   terrace: { top: 258, step: 319, back: '#3c3874', lip: '#7d79bd', face: '#4a4589', floor: '#34306a' },
   // the one fence between the crowd and the pitch (bg_fence, a seamless tile), standing on the barrier
-  fence: { top: 312, height: 48, factor: 0.62, haze: 0.05 },
+  fence: { top: 317, height: 48, factor: 0.62, haze: 0.05 },
   // Floodlight lamp faces in the stands strip (bg_stands), as fractions of its width / height: two per
   // tile, measured on the art. At night they glow and throw a faint cone of light over the crowd.
   floodlights: { x: [0.1743, 0.8253], y: 0.09 },
-  // the field (field.png → bg_pitch) covers the bottom half of the screen: 1983 × 562 at the view
-  // width is 363 px tall, so its top (the red barrier) is at 357. Its box corners meet the goals' near
-  // posts; the players stand between its touchlines (KL.TUNING.world.groundY)
-  pitch: { top: 357, fit: 'width', factor: 1 },
+  // the field (new-pitch.png → bg_pitch, 2172 × 472) covers the bottom half of the screen, shown
+  // `width` px wide, centred, its top (the red barrier) at `top`: 359 px tall, so it runs just past the
+  // bottom edge. At that size its near touchline (source x 363 … 1807) spans x 90 … 1188 at y 534, so
+  // the box corners meet the goals' near posts; the players stand between its touchlines
+  // (KL.TUNING.world.groundY). The art is wider than the design area, so a wide phone sees real grass
+  // out to ±185 px past it (mirrored copies only beyond that, on 21:9)
+  pitch: { top: 364, width: 1650, fit: 'width', factor: 1 },
   showcaseY: 620, // where the menu / result screens stand their big characters (on the grass)
 };
 // extra px on each side of the 1280-wide design area: the widest view (KL.View.LIMITS, 21:9 phones
@@ -351,6 +354,7 @@ KL.Stadium = {
     const span = W.width + M * 2;
     const has = (k) => scene.textures.exists(k) && k !== '__MISSING';
     const hazeColor = night ? KL.STADIUM_HAZE.night : KL.STADIUM_HAZE.day;
+    KL.audio?.setStadium({ night }); // day birds and wind, or crickets and floodlight hum; the reverb
 
     /** Full-resolution layer (sky / pitch): these are shown larger than the source, so no prescale. */
     const big = (texKey, band, depth) => {
@@ -358,11 +362,13 @@ KL.Stadium = {
       const src = scene.textures.get(texKey).getSourceImage();
       let img;
       if (band.fit === 'width') {
-        // as wide as the view and standing on its bottom edge; a mirrored copy each side covers the
-        // camera's drift (the field's markings stop well inside its edges, so no mirrored line shows)
-        const s = W.width / src.width, top = W.height - src.height * s;
-        img = scene.add.image(0, top, texKey).setOrigin(0, 0).setScale(s);
-        for (const [x, ox] of [[0, 1], [W.width, 0]]) scene.add.image(x, top, texKey).setOrigin(ox, 0).setScale(s).setFlipX(true).setDepth(depth);
+        // band.width px wide (default: the design width), centred on the design area, its top at
+        // band.top (default: standing on the bottom edge); a mirrored copy each side covers the rest
+        // of the widest view (the field's markings stop well inside its edges, so no mirrored line shows)
+        const s = (band.width ?? W.width) / src.width, w = src.width * s, left = (W.width - w) / 2;
+        const top = band.top ?? W.height - src.height * s;
+        img = scene.add.image(left, top, texKey).setOrigin(0, 0).setScale(s);
+        for (const [x, ox] of [[left, 1], [left + w, 0]]) scene.add.image(x, top, texKey).setOrigin(ox, 0).setScale(s).setFlipX(true).setDepth(depth);
         img.setDepth(depth);
         img.factor = band.factor;
         img.baseX = img.x;

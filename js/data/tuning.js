@@ -74,12 +74,12 @@ KL.TUNING = {
     // above the turf, spin in rad/s (+ topspin, − backspin). From a standing start on a still ball:
     //  low  — J, the straight kick: a driven shot that skims the turf, dipping on its topspin. Centre
     //         circle → goal (520 px) in ~0.55 s, and it still rolls into the far goal from your own box.
-    //  high — K, the long kick: a lofted ball that climbs ~250 px (over a jumping player and the bar)
-    //         and carries ~850 px before landing, held up by backspin; it checks when it lands.
+    //  high — K, the long kick: a flatter lofted ball that climbs ~200 px (over a standing rival, about
+    //         bar height) and carries ~950 px before landing, held up by backspin; it checks when it lands.
     //  header — angle follows where the ball meets the head (below centre: nodded down), within min..max.
     kicks: {
       low: { speed: 1050, angleDeg: 15, spin: 22 },
-      high: { speed: 1100, angleDeg: 44, spin: -16 },
+      high: { speed: 1170, angleDeg: 38, spin: -16 },
       header: { speed: 760, spin: 6, minDeg: -20, maxDeg: 45 },
       super: { speed: 1600, angleDeg: 8, spin: 0 },
     },

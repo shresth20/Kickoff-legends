@@ -1,7 +1,8 @@
 /* On-screen controller, laid out like a mobile head-football pad: two round arrow buttons
  * bottom-left (move); bottom-right, in key order I · J · K · L, the round fire Super button
- * wearing its charge ring, then the slanted kick / kick-high / jump buttons. Sprint has no
- * button (hold its key).
+ * wearing its charge ring, then the slanted kick / kick-high / jump buttons. On a touch screen
+ * the Super moves up into the corner above the jump button (KL.PAD_LAYOUT.touch), in easy reach of
+ * the thumb on the kicks. Sprint has no button (hold its key).
  *
  * Every button prints the player's key and lights up while that key
  * is held, so keyboard players see the controls working. On a tablet the same buttons are
@@ -34,6 +35,13 @@ KL.PAD_LAYOUT = {
     { action: 'kickHigh', look: 'kick', anchor: 'right', dx: 280, dy: 54, w: 148, h: 70 },
     { action: 'jump', look: 'kick', anchor: 'right', dx: 116, dy: 54, w: 148, h: 70 },
   ],
+  // touch screens (phones and tablets) move these buttons (fields override `solo`): the Super goes up
+  // into the right-hand corner, straight above the jump button (its charge ring flush with the top
+  // right corner of the forward-leaning jump button, and clear of it), where the thumb on the kicks
+  // reaches it with a short flick
+  touch: {
+    super: { dx: 92, dy: 152 },
+  },
   // the width both clusters need side by side (outer margins + a thumb's gap between them): on a
   // narrow screen the pad scale is capped so the hands never meet
   span: 1000,
@@ -480,8 +488,9 @@ KL.PAD_LAYOUT = {
       const keys = KL.Save.settings.controls.p1;
       // keyboard players read their keys off the buttons; a touch screen shows icons only
       const label = (action) => (KL.View.touch ? '' : KL.keyLabel(keys[action]));
+      const moved = (KL.View.touch && KL.PAD_LAYOUT.touch) || {};
       this.buttons = KL.PAD_LAYOUT.solo.map((spec) =>
-        this.build({ ...spec, player: 0, dir: 1, label: label(spec.action), arrow: spec.action === 'left' ? -1 : 1 }),
+        this.build({ ...spec, ...moved[spec.action], player: 0, dir: 1, label: label(spec.action), arrow: spec.action === 'left' ? -1 : 1 }),
       );
 
       // pointer id → button under it. Recomputed on every down / move / up, so sliding a finger

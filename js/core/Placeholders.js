@@ -248,7 +248,7 @@ window.KL = window.KL || {};
 
   function makeCharacterAtlas(scene) {
     if (scene.textures.exists('characters')) return;
-    const perChar = KL.CHARACTER_ANIMS.reduce((a, d) => a + d.frames, 0) + 1;
+    const perChar = KL.CHARACTER_ANIMS.reduce((a, d) => a + d.frames, 0);
     const total = KL.CHARACTERS.length * perChar;
     const cols = 16;
     const rows = Math.ceil(total / cols);
@@ -271,7 +271,6 @@ window.KL = window.KL || {};
         idx++;
       };
       for (const a of KL.CHARACTER_ANIMS) for (let i = 0; i < a.frames; i++) put(`${def.id}/${a.key}/${pad2(i)}`, pose(a.key, i, a.frames));
-      put(`${def.id}/turnaround/00`, base);
     }
     const tex = scene.textures.addCanvas('characters', canvas);
     for (const f of frames) tex.add(f.name, 0, f.x, f.y, CELL, CELL);

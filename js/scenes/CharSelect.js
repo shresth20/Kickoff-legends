@@ -20,6 +20,7 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     const u = V.ui;
     this.cu = Math.min(u, 1.3); // card scale: thumb-sized on a phone, still four to a side
     KL.Stadium.build(this, { night: this.cfg.night, parallax: false });
+    KL.audio?.playMusic('menu'); // (carries on if it's already playing)
     V.cover(this, 0x0f1230, 0.6).setDepth(5);
     const title = KL.displayText(this, W.width / 2, 56, KL.t('select_title'), 56).setDepth(6);
     const divider = this.add.rectangle(W.width / 2, 670, 6, 560, 0xf5c518).setOrigin(0.5, 1).setDepth(6);
@@ -153,6 +154,7 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     if (this.ready[i]) return;
     this.select(i, this.sides[i].index + d);
     KL.audio?.play('ui_move');
+    KL.audio?.play('card_swish', { x: this.sides[i].cx });
   }
 
   /** Player 1 locks in / backs out (i = 0); the CPU (i = 1, force) only ever locks in after them. */
@@ -161,8 +163,14 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     if (side.isCpu && !force) return;
     this.ready[i] = force ? true : !this.ready[i];
     side.readyText.setVisible(this.ready[i]);
-    side.preview.play(`${KL.CHARACTERS[side.index].id}/${this.ready[i] ? 'celebrate' : 'idle'}`, true);
-    KL.audio?.play(this.ready[i] ? 'ui_click' : 'ui_back');
+    const def = KL.CHARACTERS[side.index];
+    side.preview.play(`${def.id}/${this.ready[i] ? 'celebrate' : 'idle'}`, true);
+    if (this.ready[i]) {
+      // locked in: a blade-like "shing", the legend's shout, and the announcer calls their name
+      KL.audio?.play('ui_confirm', { key: i });
+      KL.audio?.voices?.say(def.id, 'ready', { x: side.cx, delay: 0.08, gain: side.isCpu ? 0.7 : 1 });
+      if (!side.isCpu) KL.Commentary?.say('comm_pick', { name: def.name }, { priority: 1, delay: 0.3, excited: true });
+    } else KL.audio?.play('ui_back');
     if (i === 0) {
       if (this.ready[0]) {
         this.cpuShuffle.paused = true;

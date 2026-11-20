@@ -104,15 +104,24 @@ KL.AIBrain = class AIBrain {
     return crossed(s) && s.y > T.world.groundY - T.goal.openingHeight + T.ball.radius; // under the bar
   }
 
+  /** Would a long kick (K), taken now, sail over the rival's head? Plays the flight to their body. */
+  wouldClear(attackDir) {
+    const T = KL.TUNING, me = this.me, fb = this.foe.body, r = T.ball.radius;
+    const shot = KL.BallPhysics.launch('high', attackDir, me.stats.power, me.body.velocity.x * T.ball.carry, T.ball);
+    const nearX = attackDir === 1 ? fb.left : fb.right;
+    const reached = (s) => (s.x + r * attackDir - nearX) * attackDir >= 0;
+    const s = KL.BallPhysics.simulate({ ...this.ballState(), ...shot }, T.ball, this.world, (st) => reached(st) || st.landed, { maxT: 1.5, spinR: this.ball.visR });
+    return reached(s) && s.y + r < fb.top - 4;
+  }
+
   /** Straight (J) or long (K) kick? */
   chooseKick(attackDir, ownGoalX) {
     const me = this.me, foe = this.foe;
     if (Math.abs(me.x - ownGoalX) < 300) return 'high'; // in our own box: clear it long
     const gap = (foe.x - me.x) * attackDir;
-    const S = KL.TUNING.player.scale;
     if (gap > 0 && gap < 260 && foe.onFloor) {
-      // a straight kick would hit them: loft it over if there's room, else take a chance either way
-      return gap > 190 * S || Math.random() < 0.5 ? 'high' : 'low';
+      // a straight kick would hit them: loft it over if it clears their head, else take a chance either way
+      return this.wouldClear(attackDir) || Math.random() < 0.5 ? 'high' : 'low';
     }
     const low = this.wouldScore('low', attackDir), high = this.wouldScore('high', attackDir);
     if (low && high) return Math.random() < 0.7 ? 'low' : 'high';

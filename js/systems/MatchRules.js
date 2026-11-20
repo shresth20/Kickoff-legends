@@ -90,11 +90,5 @@ KL.MatchRules = class MatchRules {
     if (s.suddenDeath) s.winner = scorer;
     return true;
   }
-
-  forceEnd() {
-    const s = this.state;
-    s.phase = 'over';
-    s.winner = s.score[0] === s.score[1] ? null : s.score[0] > s.score[1] ? 0 : 1;
-  }
 };
 

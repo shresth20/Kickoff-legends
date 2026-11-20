@@ -1,5 +1,6 @@
 /* Typed-by-convention pub/sub. One bus per match; systems publish, HUD/audio/FX subscribe.
- * Events: KICK, BUMP, GOAL, WHISTLE, CLOCK, SUPER_METER, SUPER_READY, SUPER_FIRED, HURT, LAND, PAUSE, MATCH_END */
+ * Events: KICK, SWING, JUMP, LAND, BALL_IMPACT, FRAME_HIT, GOAL, WHISTLE, CLOCK, SUPER_METER, SUPER_READY,
+ * SUPER_FIRED, HURT, EMOTE, PAUSE, MATCH_END */
 window.KL = window.KL || {};
 
 KL.EventBus = class EventBus {

@@ -29,9 +29,9 @@ KL.Goal = class Goal {
 
     const topY = W.groundY - G.openingHeight;
     this.statics = scene.physics.add.staticGroup();
-    const bar = this.statics.create(baseX + dir * (G.width / 2), topY - G.crossbarThickness / 2, '__DEFAULT').setVisible(false);
+    const bar = (this.bar = this.statics.create(baseX + dir * (G.width / 2), topY - G.crossbarThickness / 2, '__DEFAULT').setVisible(false));
     bar.setDisplaySize(G.width, G.crossbarThickness).refreshBody();
-    const post = this.statics.create(baseX + dir * 4, W.groundY - G.openingHeight / 2 - 4, '__DEFAULT').setVisible(false);
+    const post = (this.post = this.statics.create(baseX + dir * 4, W.groundY - G.openingHeight / 2 - 4, '__DEFAULT').setVisible(false));
     post.setDisplaySize(10, G.openingHeight + 8).refreshBody();
   }
 

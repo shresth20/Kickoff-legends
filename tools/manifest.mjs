@@ -21,6 +21,8 @@
  * keepAspect: UI pieces keep their own aspect instead of a square cell
  * merge: 'nearest' (strip / rowSpec) — fold loose pieces into frames across the narrowest gaps
  *        instead of merging the smallest piece away (for frames drawn as scattered bits)
+ * skip:  frame indices of a strip that are cut but not packed (drawn on the sheet, unused by the game);
+ *        the other frames keep their names
  */
 
 /**
@@ -58,12 +60,12 @@ export const FAN_CELL_W = 208;
 export const FAN_CELL_H = 320;
 export const FAN_FEET_Y = 312;
 
+// The raw <id>_turnaround and <id>_kit_mask sheets are not sliced: the game never shows them (no
+// animation in KL.CHARACTER_ANIMS uses them). List them here again if it ever does.
 function character(id) {
   return [
-    { name: `${id}_turnaround`, kind: 'strip', atlas: 'characters', cols: 4, cell: CHAR_CELL, out: `${id}/turnaround`, charId: id, sizeRef: 'height' },
     { name: `${id}_portrait`, kind: 'single', atlas: 'ui', keepAspect: true, out: `${id}_portrait`, maxSize: 256 },
     ...CHAR_STATES.map(([state, frames, sizeRef, pivot]) => ({ name: `${id}_${state}`, kind: 'strip', atlas: 'characters', cols: frames, cell: CHAR_CELL, out: `${id}/${state}`, charId: id, sizeRef, pivot })),
-    { name: `${id}_kit_mask`, kind: 'single', atlas: 'characters', cell: CHAR_CELL, out: `${id}/kit_mask`, mask: true },
   ];
 }
 
@@ -93,15 +95,18 @@ export const ASSETS = [
   { name: 'bg_crowd_anime_a', kind: 'fans', atlas: 'crowd', cols: 9, cheer: 'bg_crowd_anime_a_cheer', out: 'a' },
   { name: 'bg_crowd_anime_b', kind: 'fans', atlas: 'crowd', cols: 9, cheer: 'bg_crowd_anime_b_cheer', out: 'b' },
   { name: 'bg_crowd_anime_c', kind: 'fans', atlas: 'crowd', cols: 9, cheer: 'bg_crowd_anime_c_cheer', out: 'c' },
-  { name: 'field', kind: 'background', outs: ['bg_pitch'] }, // the pitch: red barrier + striped grass + markings
+  // the pitch: red barrier + striped grass + markings. new-pitch is the old field.png redrawn wider
+  // (same box and perspective, more grass each side), so a wide phone sees real grass to its edges
+  { name: 'new-pitch', kind: 'background', outs: ['bg_pitch'] },
   { name: 'bg_sky_night', kind: 'background' },
 
   // Buttons, panels, cards, key caps, the HUD scoreboard and the super-meter ring are NOT sliced from
   // art any more: js/ui/Paint.js draws them in code at screen resolution (the raw ui_buttons,
   // ui_panel_and_cards, ui_keycaps, ui_hud_scoreboard and ui_super_ring sheets are unused).
   { name: 'ui_logo', kind: 'single', atlas: 'ui', keepAspect: true, out: 'ui_logo', maxSize: 1600 },
-  { name: 'ui_icons', kind: 'strip', atlas: 'ui', cols: 12, cell: 192, pivot: 'center', out: 'ui_icons' },
-  { name: 'ui_flags', kind: 'strip', atlas: 'ui', cols: 8, cell: 160, pivot: 'center', out: 'ui_flags', names: ['flag_eng', 'flag_bra', 'flag_esp', 'flag_ger', 'flag_ind', 'flag_jpn', 'flag_arg', 'flag_fra'] },
+  // icons 01, 02 and 06 are never shown; only the four characters' flags are (KL.CHARACTERS[].flag)
+  { name: 'ui_icons', kind: 'strip', atlas: 'ui', cols: 12, cell: 192, pivot: 'center', out: 'ui_icons', skip: [1, 2, 6] },
+  { name: 'ui_flags', kind: 'strip', atlas: 'ui', cols: 8, cell: 160, pivot: 'center', out: 'ui_flags', names: ['flag_eng', 'flag_bra', 'flag_esp', 'flag_ger', 'flag_ind', 'flag_jpn', 'flag_arg', 'flag_fra'], skip: [3, 4, 6, 7] },
   { name: 'ui_banners', kind: 'grid', atlas: 'ui', cols: 1, rows: 4, keepAspect: true, maxSize: 1122, out: 'ui_banners' },
   { name: 'ui_emotes', kind: 'strip', atlas: 'ui', cols: 6, cell: 192, pivot: 'center', out: 'ui_emotes' },
 

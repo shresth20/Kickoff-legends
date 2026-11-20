@@ -118,6 +118,7 @@ KL.BootScene = class BootScene extends Phaser.Scene {
     this.tweens.add({ targets: this.title, scaleX: bs * 1.04, scaleY: bs * 1.04, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
     const go = () => {
       KL.audio?.unlock();
+      KL.audio?.play('ui_start');
       KL.goTo(this, 'Menu');
     };
     this.input.keyboard.once('keydown', go);

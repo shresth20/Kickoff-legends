@@ -275,6 +275,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.runUp = this.body.velocity.x;
     if (kind === 'low') this.setState('kick_low');
     else this.setState(this.onFloor ? 'kick_high' : 'header');
+    this.bus.emit('SWING', { player: this.index, kind: this.state === 'kick_low' ? 'low' : this.state === 'kick_high' ? 'high' : 'header', x: this.x });
   }
 
   /** A hit-stop froze the world for `ms`: the action clocks wait with it, so no strike is cut short. */
@@ -345,6 +346,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
       this.pose.x = Math.min(this.pose.x, -PM.jumpStretch); // springs up long and lean
       this.pose.v = 0;
       this.fallVy = 0;
+      this.bus.emit('JUMP', { player: this.index, x: this.x });
     }
     if (!this.onFloor) this.fallVy = Math.max(this.fallVy, this.body.velocity.y);
 
@@ -378,7 +380,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
       this.pose.x = Math.max(this.pose.x, PM.landSquash * k);
       this.pose.v = 0;
       this.fallVy = 0;
-      this.bus.emit('LAND', { player: this.index, x: this.x, y: this.y });
+      this.bus.emit('LAND', { player: this.index, x: this.x, y: this.y, impact: k });
     }
     this.wasOnFloor = this.onFloor;
 
