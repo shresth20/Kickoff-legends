@@ -7,12 +7,16 @@ KL.CreditsScene = class CreditsScene extends Phaser.Scene {
   }
   create() {
     const W = KL.TUNING.world;
+    const V = KL.View;
     KL.Stadium.build(this, { night: true, parallax: false });
-    this.add.rectangle(0, 0, W.width, W.height, 0x0f1230, 0.5).setOrigin(0).setDepth(5);
-    const title = KL.displayText(this, W.width / 2, W.height + 60, KL.t('credits_title'), 72).setDepth(6);
-    const body = KL.bodyText(this, W.width / 2, W.height + 160, KL.t('credits_body'), 24, '#ffffff', { originY: 0, lineSpacing: 10 }).setDepth(6);
-    this.tweens.add({ targets: [title, body], y: '-=' + (W.height + 420), duration: 16000, ease: 'Linear', onComplete: () => KL.goTo(this, 'Menu') });
-    KL.bodyText(this, W.width / 2, W.height - 30, KL.t('credits_hint'), 16, '#9aa1b8').setDepth(6);
+    V.cover(this, 0x0f1230, 0.5).setDepth(5);
+    // rolls up the whole screen, from below its bottom edge to above its top
+    const title = KL.displayText(this, W.width / 2, V.bottom + 60, KL.t('credits_title'), 72).setDepth(6);
+    const body = KL.bodyText(this, W.width / 2, V.bottom + 160, KL.t('credits_body'), V.font(24), '#ffffff', { originY: 0, lineSpacing: 10 }).setDepth(6);
+    const travel = V.bottom - V.top + 420;
+    this.tweens.add({ targets: [title, body], y: '-=' + travel, duration: 16000 * (travel / (W.height + 420)), ease: 'Linear', onComplete: () => KL.goTo(this, 'Menu') });
+    const hint = KL.bodyText(this, W.width / 2, 0, KL.t(V.touch ? 'credits_hint_touch' : 'credits_hint'), V.font(16), '#9aa1b8').setDepth(6);
+    V.layout(this, (v) => hint.setY(v.bottom - 30));
     const go = () => KL.goTo(this, 'Menu');
     this.input.keyboard.once('keydown', go);
     this.input.once('pointerdown', go);

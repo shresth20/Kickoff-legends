@@ -54,8 +54,8 @@ KL.Goal = class Goal {
     const frame = (i) => ({ key: 'props', frame: `${this.key}/near/${String(i).padStart(2, '0')}` });
     if (!scene.anims.exists(`${this.key}/ripple`)) {
       // goal: the net swings back and forth twice and settles · bump: one small twitch
-      scene.anims.create({ key: `${this.key}/ripple`, frames: [1, 2, 3, 4, 0].map(frame), frameRate: 16, repeat: 1 });
-      scene.anims.create({ key: `${this.key}/bump`, frames: [3, 4, 0].map(frame), frameRate: 16 });
+      scene.anims.create({ key: `${this.key}/ripple`, frames: [1, 2, 3, 4, 0].map(frame), frameRate: 16 * KL.animPace(), repeat: 1 });
+      scene.anims.create({ key: `${this.key}/bump`, frames: [3, 4, 0].map(frame), frameRate: 16 * KL.animPace() });
     }
   }
 
@@ -201,7 +201,7 @@ KL.Goal = class Goal {
     this.sprite.setFlipX(this.side === 'left');
     this.displaySize = { w, h };
     if (!scene.anims.exists('goal_net_shake')) {
-      scene.anims.create({ key: 'goal_net_shake', frames: scene.anims.generateFrameNames('props', { prefix: 'goal_net_shake/', start: 0, end: 3, zeroPad: 2 }), frameRate: 12, repeat: 1 });
+      scene.anims.create({ key: 'goal_net_shake', frames: scene.anims.generateFrameNames('props', { prefix: 'goal_net_shake/', start: 0, end: 3, zeroPad: 2 }), frameRate: 12 * KL.animPace(), repeat: 1 });
     }
   }
 

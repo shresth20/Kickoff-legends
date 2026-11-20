@@ -1,4 +1,4 @@
-/* FXManager: one-shot effects, particles, hit-stop and camera shake.
+/* FXManager: one-shot effects, particles, hit-stop (a dip in game speed, run by MatchScene) and camera shake.
  * Subscribes to the match EventBus so gameplay code never calls it directly.
  * Kick starbursts and dust clouds are the fx_impact / fx_dust art (fx atlas), played here. The speed
  * lines, whistle, super-ready twinkles and goal confetti are drawn by the CSS layer (js/core/FXLayer.js
@@ -14,7 +14,7 @@ KL.FX = class FXManager {
     const css = (this.css = KL.FXLayer?.enabled() ? new KL.FXLayer(scene) : null);
     const a = scene.anims;
     const def = (key, prefix, end, fps) => {
-      if (!a.exists(key)) a.create({ key, frames: a.generateFrameNames('fx', { prefix, start: 0, end, zeroPad: 2 }), frameRate: fps, repeat: 0 });
+      if (!a.exists(key)) a.create({ key, frames: a.generateFrameNames('fx', { prefix, start: 0, end, zeroPad: 2 }), frameRate: fps * KL.animPace(), repeat: 0 });
     };
     def('fx_impact', 'fx_impact/', 4, 24);
     def('fx_dust', 'fx_dust/', 5, 18);
@@ -39,9 +39,10 @@ KL.FX = class FXManager {
 
     this.offs.push(
       bus.on('KICK', (e) => {
+        const J = KL.TUNING.juice;
         this.impact(e.x, e.y, e.kind);
-        this.shake(e.kind === 'super' ? KL.TUNING.juice.goalShakePx : KL.TUNING.juice.kickShakePx, 80);
-        this.hitStop(e.kind === 'super' ? KL.TUNING.juice.hitStopMs * 2 : KL.TUNING.juice.hitStopMs);
+        this.shake(J.kickShakePx[e.kind] ?? 2, e.kind === 'super' ? 160 : 90);
+        this.hitStop(J.hitStopMs[e.kind] ?? 50);
       }),
       bus.on('LAND', (e) => this.dust(e.x, e.y - 8, 0.62)),
       bus.on('HURT', () => this.shake(4, 150)),
@@ -71,19 +72,19 @@ KL.FX = class FXManager {
 
   /** Kick starburst (fx_impact): sized by the strike, turned and mirrored at random so no two match. */
   impact(x, y, kind) {
-    const k = { header: 0.7, clash: 1, super: 1.35 }[kind] ?? 0.8;
+    const k = { low: 0.9, high: 1, header: 0.7, clash: 1, super: 1.35 }[kind] ?? 0.8;
     this.burst('fx_impact', x, y, k * Phaser.Math.FloatBetween(0.92, 1.08))
       .setAngle(Phaser.Math.Between(-25, 25))
       .setFlipX(Math.random() < 0.5);
-    // a strike along the turf kicks up some dust
+    // a strike off the turf kicks up some dust
     const G = KL.TUNING.world.groundY;
-    if ((kind === 'low' || kind === 'super') && y > G - 60) this.dust(x, G - 8, 0.45);
+    if ((kind === 'low' || kind === 'high' || kind === 'super') && y > G - 60) this.dust(x, G - 8, kind === 'low' ? 0.45 : 0.55);
   }
 
   /** Dust cloud (fx_dust). dir ≠ 0: it drifts that way as it puffs out (sprint dust trails the runner). */
   dust(x, y, scale, dir = 0, depth = 30) {
     const s = this.burst('fx_dust', x, y, scale, depth).setFlipX(Math.random() < 0.5);
-    if (dir) this.scene.tweens.add({ targets: s, x: x + dir * 22, y: y - 4, duration: 330, ease: 'Sine.out' });
+    if (dir) this.scene.tweens.add({ targets: s, x: x + dir * 22, y: y - 4, duration: KL.paced(330), ease: 'Sine.out' });
   }
 
   /** Sprinting on the turf (Player shows its sprint lines): a small cloud behind the boots every stride. */
@@ -104,24 +105,17 @@ KL.FX = class FXManager {
 
   shake(px, ms) {
     if (!KL.Save.settings.screenShake) return;
-    // Phaser's shake offset is intensity × camera width × zoom, applied before the zoom again:
-    // divide by RES² so `px` stays logical pixels at any render resolution.
-    this.scene.cameras.main.shake(ms, px / 1000 / (KL.RES * KL.RES));
+    // Phaser's shake offset is intensity × camera size × zoom, applied before the zoom again:
+    // divide by RES² so `px` stays logical pixels at any render resolution, and by the view's size
+    // relative to 1280×720 so a wide phone or a tall tablet shakes as hard as the design.
+    const k = px / 1000 / (KL.RES * KL.RES), V = KL.View, W = KL.TUNING.world;
+    this.scene.cameras.main.shake(ms, new Phaser.Math.Vector2((k * W.width) / V.w, (k * W.height) / V.h));
   }
 
+  /** A strike's weight: the match dips its game speed for a moment (MatchScene.hitStop) instead of
+   * freezing the picture. */
   hitStop(ms) {
-    if (!ms) return;
-    const s = this.scene;
-    if (s.physics.world.isPaused || s._hitStopping) return;
-    s._hitStopping = true;
-    s.physics.world.pause();
-    s.anims.pauseAll();
-    s.time.delayedCall(ms, () => {
-      s._hitStopping = false;
-      if (s.paused) return; // the pause menu opened meanwhile; resuming is its job
-      s.physics.world.resume();
-      s.anims.resumeAll();
-    });
+    if (ms) this.scene.hitStop?.(ms);
   }
 
   destroy() {

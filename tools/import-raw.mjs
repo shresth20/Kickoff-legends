@@ -16,7 +16,8 @@ const src = resolve(process.argv[2] || join(homedir(), 'Downloads'));
 const dst = resolve(root, RAW_DIR);
 mkdirSync(dst, { recursive: true });
 
-const wanted = new Map(ASSETS.map((a) => [a.name, null]));
+// every raw sheet: the assets plus the arms-up line-ups of the crowd (`cheer`)
+const wanted = new Map(ASSETS.flatMap((a) => [a.name, a.cheer].filter(Boolean)).map((n) => [n, null]));
 const files = readdirSync(src).filter((f) => /\.png$/i.test(f));
 for (const f of files) {
   const base = basename(f, '.png').replace(/\s*\(\d+\)$/, '');

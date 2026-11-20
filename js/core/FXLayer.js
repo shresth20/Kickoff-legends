@@ -5,8 +5,9 @@
  *  - twinkles when a super is ready, and goal confetti in the scorer's colours
  *
  * The layer works in the game's 1280×720 logical px and is synced after every render (POST_RENDER):
- * scaled onto the canvas, moved with the camera scroll and shake, faded with camera fades and slowed
- * with the goal slow-mo (the playbackRate of its CSS animations). The pause menu hides and freezes it.
+ * scaled onto the canvas (the whole view, KL.View), moved with the camera scroll and shake, faded with camera fades and slowed
+ * with the goal slow-mo and the look-only pace (the playbackRate of its CSS animations). The pause menu
+ * hides and freezes it.
  * Every effect is a handful of elements whose randomness comes in as CSS custom properties, so no two
  * bursts look alike, and only transform / opacity animate.
  *
@@ -156,7 +157,7 @@ window.KL = window.KL || {};
       st.top = `${c.top - p.top}px`;
       st.width = `${c.width}px`;
       st.height = `${c.height}px`;
-      this.k = c.width / KL.TUNING.world.width || 1;
+      this.k = c.width / KL.View.w || 1;
     }
 
     /** After every render: follow the canvas, the camera, fades, slow-mo and the players. */
@@ -174,16 +175,18 @@ window.KL = window.KL || {};
         this.camKey = '';
       }
 
-      // the camera: its scroll moves the world space, its shake moves both spaces
+      // the camera: its scroll moves the world space, its shake moves both spaces. The screen space
+      // keeps the design area's coordinates too (the camera scroll is the view's offset around it)
       const sh = cam.shakeEffect;
       const ox = sh?.isRunning ? sh._offsetX || 0 : 0;
       const oy = sh?.isRunning ? sh._offsetY || 0 : 0;
       const wx = r2(ox - cam.scrollX), wy = r2(oy - cam.scrollY);
-      const camKey = `${this.k}|${wx}|${wy}|${ox}|${oy}`;
+      const sx = r2(ox - KL.View.x), sy = r2(oy - KL.View.y);
+      const camKey = `${this.k}|${wx}|${wy}|${sx}|${sy}`;
       if (camKey !== this.camKey) {
         this.camKey = camKey;
         this.world.style.transform = `scale(${this.k}) translate3d(${wx}px, ${wy}px, 0)`;
-        this.screen.style.transform = `scale(${this.k}) translate3d(${r2(ox)}px, ${r2(oy)}px, 0)`;
+        this.screen.style.transform = `scale(${this.k}) translate3d(${sx}px, ${sy}px, 0)`;
       }
 
       // a camera fade (leaving the match) fades the effects with it
@@ -194,9 +197,11 @@ window.KL = window.KL || {};
         this.root.style.opacity = veil ? String(1 - veil) : '';
       }
 
-      // goal slow-mo: every CSS animation runs at the game's speed
-      const rate = sc.time?.timeScale ?? 1;
-      if (Math.abs(rate - this.rate) > 1e-3) {
+      // goal slow-mo and the hit-stop dip: every CSS animation runs at the game's speed, at the look-only
+      // pace (KL.TUNING.motion.animPace). Rounded to 1/40 steps, so an easing speed re-times the
+      // animations a few times rather than on every frame
+      const rate = Math.max(0.025, Math.round((sc.time?.timeScale ?? 1) * KL.animPace() * 40) / 40);
+      if (rate !== this.rate) {
         this.rate = rate;
         this.applyRate(this.root);
       }
@@ -290,7 +295,7 @@ window.KL = window.KL || {};
 
     /** @param {object} def the scorer's character (kit colours, super colour) */
     confetti(def) {
-      const W = KL.TUNING.world;
+      const V = KL.View; // the whole screen, edge to edge
       const team = def?.kit?.primary || '#E63946';
       const colors = [team, team, '#FFD23F', '#FFD23F', '#FFFFFF', def?.superColor || '#3BC9FF', '#FF5DA2'];
       const shapes = [['is-rect', 18, 9], ['is-rect', 14, 8], ['is-strip', 6, 24], ['is-dot', 12, 12], ['is-tri', 17, 15], ['is-star', 22, 22]];
@@ -302,13 +307,13 @@ window.KL = window.KL || {};
       // a shower from the top…
       for (let k = 0, n = this.reduced ? 20 : 44; k < n; k++) {
         const sw = rnd(18, 55) * (Math.random() < 0.5 ? -1 : 1);
-        piece(div(r, 'klfx-cf is-rain', { x0: px(rnd(20, W.width - 20)), y0: px(rnd(-60, -20)), fall: px(rnd(780, 860)), sw: px(sw), d: ms(rnd(2600, 3700)), dl: ms(rnd(0, 900)) }));
+        piece(div(r, 'klfx-cf is-rain', { x0: px(rnd(V.x + 20, V.x + V.w - 20)), y0: px(V.y + rnd(-60, -20)), fall: px(V.h + rnd(60, 140)), sw: px(sw), d: ms(rnd(2600, 3700)), dl: ms(rnd(0, 900)) }));
       }
-      // …and two cannons firing from the bottom corners
+      // …and two cannons firing from the bottom corners of the screen
       if (!this.reduced) {
         for (const side of [-1, 1]) {
           for (let k = 0; k < 24; k++) {
-            const shot = div(r, 'klfx-cf is-shot', { x0: px(side < 0 ? 30 : W.width - 30), y0: px(W.height - 20), vx: px(-side * rnd(120, 560)), sw: px(rnd(14, 40)), d: ms(rnd(2400, 3300)), dl: ms(rnd(0, 160)) });
+            const shot = div(r, 'klfx-cf is-shot', { x0: px(side < 0 ? V.left + 30 : V.right - 30), y0: px(V.bottom - 20), vx: px(-side * rnd(120, 560)), sw: px(rnd(14, 40)), d: ms(rnd(2400, 3300)), dl: ms(rnd(0, 160)) });
             piece(div(shot, 'klfx-cf__y', { peak: px(rnd(380, 640)), drop: px(rnd(40, 140)) }));
           }
         }

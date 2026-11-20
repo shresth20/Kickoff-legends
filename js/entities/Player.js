@@ -6,7 +6,13 @@
  * sprite frames a light "pose" layer adds weight: a stretch on take-off, a squash on landing that
  * grows with the fall, a lean into starts and stops, and a recoil tilt when hit. The pose is applied
  * only for the render pass (PRE_RENDER → RENDER) and undone right after, because scaling an Arcade
- * sprite would also resize its body — the hitbox never changes. Feel numbers: KL.TUNING.motion.player. */
+ * sprite would also resize its body — the hitbox never changes. Feel numbers: KL.TUNING.motion.player.
+ *
+ * Strikes: J = the straight kick (kick_low), K = the long kick (kick_high on the turf, a header in the
+ * air). The boot meets the ball ~85 ms after the key (KL.CHARACTER_ANIMS frameMs); the run-up as the
+ * kick began goes into the ball, and the body carries on through the strike at a stride's pace. A kick
+ * or jump pressed a moment early is buffered (KL.TUNING.player.inputBufferMs), and once the follow-
+ * through is done the recovery gives way to the next move. The flight itself: js/systems/BallPhysics.js. */
 window.KL = window.KL || {};
 
 KL.EMPTY_INTENT = Object.freeze({ moveX: 0, jump: false, kickLow: false, kickHigh: false, super: false, sprint: false });
@@ -42,7 +48,13 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.hurtUntil = 0;
     this.wasOnFloor = true;
     this.superCharging = 0;
-    const m = (v) => 1 + (v - 3) * 0.075; // stat 1..5 → ±15 %
+    this.superReleaseUntil = 0;
+    this.kickBuffer = null; // { kind, until }: a kick pressed while busy (see step)
+    this.jumpUntil = 0; // a jump pressed while busy, held until then
+    this.runUp = 0; // ground speed as the current kick began (goes into the strike)
+    this.stateDef = null;
+    this.slipDir = 0; // sliding off the other player's head that way (see slipOff)
+    const m =(v) => 1 + (v - 3) * 0.075; // stat 1..5 → ±15 %
     this.stats = { speed: m(def.stats.speed), jump: m(def.stats.jump), power: m(def.stats.power) };
 
     scene.add.existing(this);
@@ -76,17 +88,23 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.lean = 0;
     this.prevVx = 0;
     this.fallVy = 0; // fastest fall of the current jump (sizes the landing squash)
+    this.sprintDir = this.facing; // which way the sprint lines stream from
     scene.events.on(Phaser.Scenes.Events.PRE_RENDER, this.applyPose, this);
     scene.events.on(Phaser.Scenes.Events.RENDER, this.clearPose, this);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.unhookPose(scene));
   }
 
-  /** Draw-time only: squash/stretch about the feet (origin 0.5, 1) plus lean and recoil. */
+  /** Draw-time only: squash/stretch about the feet (origin 0.5, 1) plus lean and recoil. Also places
+   * the aura and sprint lines here, where the body has already moved this frame (placed in step() they
+   * trailed the player by a frame). */
   applyPose() {
     if (!this.body) return;
     const q = this.pose.x;
     this.setScale(this.baseScaleX * (1 + q * KL.TUNING.motion.player.widen), this.baseScaleY * (1 - q));
     this.rotation = this.lean + this.tilt.x;
+    const S = KL.TUNING.player.scale;
+    if (this.aura.visible) this.aura.setPosition(this.x, this.y - 95 * S);
+    if (this.sprintLines.visible) this.sprintLines.setPosition(this.x - this.sprintDir * 110 * S, this.y - 80 * S);
   }
   /** Back to the physics shape before the next update reads it. */
   clearPose() {
@@ -120,14 +138,10 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
 
   ensureAnims() {
     const anims = this.scene.anims;
-    for (const a of KL.CHARACTER_ANIMS) {
-      const key = `${this.def.id}/${a.key}`;
-      if (anims.exists(key)) continue;
-      anims.create({ key, frames: anims.generateFrameNames('characters', { prefix: `${this.def.id}/${a.key}/`, start: 0, end: a.frames - 1, zeroPad: 2 }), frameRate: a.fps, repeat: a.loop ? -1 : 0 });
-    }
+    KL.ensureCharacterAnims(anims, this.def.id);
     if (!anims.exists('fx_super_aura')) {
-      anims.create({ key: 'fx_super_aura', frames: anims.generateFrameNames('fx', { prefix: 'fx_super_aura/', start: 0, end: 7, zeroPad: 2 }), frameRate: 14, repeat: -1 });
-      anims.create({ key: 'fx_speedlines', frames: anims.generateFrameNames('fx', { prefix: 'fx_speedlines/', start: 0, end: 3, zeroPad: 2 }), frameRate: 18, repeat: -1 });
+      anims.create({ key: 'fx_super_aura', frames: anims.generateFrameNames('fx', { prefix: 'fx_super_aura/', start: 0, end: 7, zeroPad: 2 }), frameRate: 14 * KL.animPace(), repeat: -1 });
+      anims.create({ key: 'fx_speedlines', frames: anims.generateFrameNames('fx', { prefix: 'fx_speedlines/', start: 0, end: 3, zeroPad: 2 }), frameRate: 18 * KL.animPace(), repeat: -1 });
     }
   }
 
@@ -150,7 +164,11 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.setFlipX(this.facing === -1);
     this.actionUntil = 0;
     this.superCharging = 0;
+    this.superReleaseUntil = 0;
     this.hurtUntil = 0;
+    this.kickBuffer = null;
+    this.jumpUntil = 0;
+    this.runUp = 0;
     this.locked = false; // released from a goal / full-time pose
     this.hideAura(false);
     this.pose.reset();
@@ -158,7 +176,26 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.lean = 0;
     this.prevVx = 0;
     this.fallVy = 0;
+    this.slipDir = 0;
     this.setState('idle');
+  }
+
+  /** Feet resting on `other`'s head (MatchScene's player collider holds them there instead of landing them);
+   * not when they're only rising past it, jumping up beside the other player. */
+  isOnHeadOf(other) {
+    const b = this.body, o = other.body;
+    return Math.abs(b.bottom - o.top) <= 2 && b.right > o.left && b.left < o.right && b.velocity.y >= o.velocity.y;
+  }
+
+  /** On the other player's head: slide off sideways, then gravity drops them to the turf. The way they
+   * were already moving (a running jump carries on over), else off the side they hang over, else towards
+   * the open pitch; a wall or goalpost turns the slide round. */
+  slipOff(under) {
+    const b = this.body, vx = b.velocity.x;
+    let dir = this.slipDir || (Math.abs(vx) > 60 ? Math.sign(vx) : 0) || Math.sign(this.x - under.x) || (under.x < KL.TUNING.world.width / 2 ? 1 : -1);
+    if (dir > 0 ? b.blocked.right : b.blocked.left) dir = -dir;
+    this.slipDir = dir;
+    b.velocity.x = dir * Math.max(KL.TUNING.player.headSlipSpeed, dir * b.velocity.x);
   }
 
   addSuper(amount) {
@@ -191,7 +228,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     const a = this.aura, s = this.auraScale;
     this.scene.tweens.killTweensOf(a);
     a.setVisible(true).setAlpha(1).setScale(s.x * 0.55, s.y * 0.4).play('fx_super_aura', true);
-    this.scene.tweens.add({ targets: a, scaleX: s.x, scaleY: s.y, duration: 160, ease: 'Back.out' });
+    this.scene.tweens.add({ targets: a, scaleX: s.x, scaleY: s.y, duration: KL.paced(160), ease: 'Back.out' });
   }
 
   /** Super aura off: burst = swell and fade out (release / knocked out of it); otherwise gone at once. */
@@ -203,7 +240,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
       a.setVisible(false).setAlpha(1).setScale(s.x, s.y);
     };
     if (!burst || !a.visible) return reset();
-    this.scene.tweens.add({ targets: a, scaleX: s.x * 1.4, scaleY: s.y * 1.3, alpha: 0, duration: 220, ease: 'Cubic.out', onComplete: reset });
+    this.scene.tweens.add({ targets: a, scaleX: s.x * 1.4, scaleY: s.y * 1.3, alpha: 0, duration: KL.paced(220), ease: 'Cubic.out', onComplete: reset });
   }
 
   celebrate() {
@@ -223,8 +260,31 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.actionHitDone = false;
     this.play(`${this.def.id}/${next}`, true);
     if (next !== 'run') this.anims.timeScale = 1; // only the run cycle follows the ground speed
-    const def = KL.CHARACTER_ANIMS.find((a) => a.key === next);
-    this.actionUntil = this.scene.time.now + (durationMs ?? (def.frames / def.fps) * 1000);
+    this.stateDef = KL.CHARACTER_ANIMS.find((a) => a.key === next);
+    this.actionUntil = this.scene.time.now + (durationMs ?? KL.charAnimMs(this.stateDef));
+  }
+
+  /** 0-based frame of the playing animation. */
+  get frameIndex() {
+    return (this.anims.currentFrame?.index ?? 1) - 1;
+  }
+
+  /** Start a strike. The run-up is read now, before the standing foot plants and brakes the body. */
+  startKick(kind) {
+    this.kickBuffer = null;
+    this.runUp = this.body.velocity.x;
+    if (kind === 'low') this.setState('kick_low');
+    else this.setState(this.onFloor ? 'kick_high' : 'header');
+  }
+
+  /** A hit-stop froze the world for `ms`: the action clocks wait with it, so no strike is cut short. */
+  holdFor(ms) {
+    const now = this.scene.time.now;
+    if (this.actionUntil > now) this.actionUntil += ms;
+    if (this.hurtUntil > now) this.hurtUntil += ms;
+    if (this.superReleaseUntil > now) this.superReleaseUntil += ms;
+    if (this.kickBuffer) this.kickBuffer.until += ms;
+    if (this.jumpUntil > now) this.jumpUntil += ms;
   }
 
   /** Called by MatchScene each frame with dt in seconds. */
@@ -232,16 +292,28 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     const now = this.scene.time.now;
     const P = KL.TUNING.player;
     const i = this.frozen || this.locked ? KL.EMPTY_INTENT : this.intent;
+    const world = this.scene.physics.world;
+    const gdt = world.isPaused ? 0 : dt * (this.scene.speed ?? 1); // game time: slows in a hit-stop's dip and the goal slow-mo
+
+    // buffered presses: a kick or jump pressed a moment early (still landing, still in a kick's
+    // recovery) happens the moment the player is free instead of being swallowed
+    if (this.frozen || this.locked) (this.kickBuffer = null), (this.jumpUntil = 0);
+    if (i.kickLow || i.kickHigh) this.kickBuffer = { kind: i.kickLow ? 'low' : 'high', until: now + P.inputBufferMs };
+    if (i.jump) this.jumpUntil = now + P.inputBufferMs;
+    const wantKick = this.kickBuffer && now <= this.kickBuffer.until ? this.kickBuffer.kind : null;
+    const wantJump = now <= this.jumpUntil;
 
     if (i.sprint && i.moveX !== 0 && this.stamina > 0) this.stamina = Math.max(0, this.stamina - dt / P.sprintStaminaSec);
     else this.stamina = Math.min(1, this.stamina + dt / P.sprintRechargeSec);
     const sprinting = i.sprint && this.stamina > 0.05 && i.moveX !== 0;
 
+    // past the follow-through, a kick's recovery frames give way to the next run, jump or kick
+    const rf = this.stateDef?.recoverFrame;
+    if (rf !== undefined && this.isActing && this.frameIndex >= rf && (i.moveX !== 0 || wantJump || wantKick)) this.actionUntil = now;
+
     const hurting = now < this.hurtUntil;
     const acting = this.isActing && this.state !== 'land';
     const PM = KL.TUNING.motion.player;
-    const world = this.scene.physics.world;
-    const gdt = world.isPaused ? 0 : dt / world.timeScale; // game time: stops in hit-stop, slows in slow-mo
     const vx = this.body.velocity.x;
 
     if (hurting) {
@@ -257,13 +329,17 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
         rate = speedingUp ? P.runAccel : P.runDecel;
         if (!this.onFloor) rate *= P.airControl;
       } else if (!this.locked && this.superCharging === 0) {
-        rate = P.plantDecel; // planting the standing foot for a kick
+        // a kick on the move: the standing foot plants (a short skid) and the body carries on through the
+        // strike at a stride's pace instead of stopping dead
+        target = i.moveX * P.runSpeed * this.stats.speed * P.kickMove;
+        rate = P.plantDecel;
       }
       this.body.setVelocityX(KL.Motion.approach(vx, target, rate * gdt));
     }
     this.setFlipX(this.facing === -1);
 
-    if (i.jump && this.onFloor && !hurting && !acting && this.superCharging === 0) {
+    if (wantJump && this.onFloor && !hurting && !acting && this.superCharging === 0) {
+      this.jumpUntil = 0;
       this.body.setVelocityY(P.jumpVelocity * this.stats.jump);
       this.setState('jump');
       this.pose.x = Math.min(this.pose.x, -PM.jumpStretch); // springs up long and lean
@@ -279,7 +355,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
       this.bus.emit('SUPER_FIRED', { player: this.index });
     }
     if (this.superCharging > 0) {
-      this.superCharging -= dt * 1000;
+      this.superCharging -= gdt * 1000; // game time: a hit-stop holds the charge too
       if (this.superCharging <= 0) {
         this.superCharging = 0;
         this.superMeter = 0;
@@ -291,10 +367,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
       }
     }
 
-    if (!hurting && !acting && this.superCharging === 0) {
-      if (i.kickLow) this.setState('kick_low');
-      else if (i.kickHigh) this.setState(this.onFloor ? 'kick_high' : 'header');
-    }
+    if (wantKick && !hurting && !acting && this.superCharging === 0) this.startKick(wantKick);
 
     this.resolveHit(ball, now);
 
@@ -333,11 +406,10 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
       if (Math.abs(ball.body.velocity.x) < 80) ball.nudge(dir, P.bumpNudge);
     }
 
-    const S = KL.TUNING.player.scale;
-    this.aura.setPosition(this.x, this.y - 95 * S);
+    // (the aura and the sprint lines are placed in applyPose, once the body has moved)
     const show = sprinting && this.onFloor && !acting;
-    const runDir = i.moveX || this.facing;
-    this.sprintLines.setVisible(show).setPosition(this.x - runDir * 110 * S, this.y - 80 * S).setFlipX(runDir === 1);
+    this.sprintDir = i.moveX || this.facing;
+    this.sprintLines.setVisible(show).setFlipX(this.sprintDir === 1);
     if (show && !this.sprintLines.anims.isPlaying) this.sprintLines.play('fx_speedlines');
 
     this.stepPose(gdt, acting, hurting);
@@ -345,49 +417,35 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
 
   resolveHit(ball, now) {
     if (this.actionHitDone) return;
-    const def = KL.CHARACTER_ANIMS.find((a) => a.key === this.state);
+    const def = this.stateDef;
     if (!def?.hitFrames) return;
     const isSuperRelease = this.state === 'super' && this.superCharging === 0;
-    const frameIdx = (this.anims.currentFrame?.index ?? 1) - 1;
-    const inWindow = isSuperRelease ? now < this.superReleaseUntil : def.hitFrames.includes(frameIdx);
+    const inWindow = isSuperRelease ? now < this.superReleaseUntil : def.hitFrames.includes(this.frameIndex);
     if (!inWindow) return;
 
     const P = KL.TUNING.player;
     const B = KL.TUNING.ball;
     const S = P.scale; // foot / head reach follow the player's size
-    const reachX = this.x + this.facing * 55 * S;
-    const reachY = this.state === 'header' ? this.y - 150 * S : this.y - 40 * S;
-    const d = Phaser.Math.Distance.Between(reachX, reachY, ball.x, ball.y);
-    const radius = (P.kickRadius + (this.state === 'super' ? 130 : 0) + (this.state === 'header' ? 20 : 0)) * S;
-    if (d > radius) return;
+    const R = P.reach[this.state];
+    if (!R) return;
+    const reachX = this.x + this.facing * R.x * S;
+    const reachY = this.y - R.y * S;
+    if (Phaser.Math.Distance.Between(reachX, reachY, ball.x, ball.y) > R.r * S) return;
 
+    const KIND = { kick_low: 'low', kick_high: 'high', header: 'header', super: 'super' };
+    let kind = KIND[this.state];
+    if (!kind) return;
     this.actionHitDone = true;
-    const carry = this.body.velocity.x * B.kickLow.carry;
-    const pow = this.stats.power;
-    let kind;
-    switch (this.state) {
-      case 'kick_low':
-        ball.kick(this.facing, B.kickLow.speed * pow, B.kickLow.angleDeg, carry, this.index, 'low');
-        kind = 'low';
-        break;
-      case 'kick_high':
-        ball.kick(this.facing, B.kickHigh.speed * pow, B.kickHigh.angleDeg, carry, this.index, 'high');
-        kind = 'high';
-        break;
-      case 'header': {
-        const ang = Phaser.Math.RadToDeg(Math.atan2(-(ball.y - reachY), Math.abs(ball.x - reachX) + 1));
-        ball.kick(this.facing, B.header.speed * pow, Phaser.Math.Clamp(ang, 5, 60), carry * 0.5, this.index, 'header');
-        kind = 'header';
-        break;
-      }
-      case 'super':
-        ball.kick(this.facing, B.super.speed, B.super.angleDeg, 0, this.index, 'super');
-        kind = 'super';
-        break;
-      default:
-        return;
+    let angle; // a header is aimed by where the ball meets the head: under its middle it's nodded down
+    if (kind === 'header') {
+      const H = B.kicks.header;
+      angle = Phaser.Math.Clamp(Phaser.Math.RadToDeg(Math.atan2(reachY - ball.y, Math.abs(ball.x - reachX) + 12)), H.minDeg, H.maxDeg);
     }
-    if (ball.lastTouchKind === 'clash') kind = 'clash';
+    // the run-up goes into the strike: taken as the kick began (the plant brakes the body before contact);
+    // a header gets half of the body's drift, a super none
+    const runUp = kind === 'header' ? this.body.velocity.x * 0.5 : kind === 'super' ? 0 : this.runUp;
+    const shot = KL.BallPhysics.launch(kind, this.facing, this.stats.power, runUp * B.carry, B, angle);
+    kind = ball.kick(shot, this.index, kind);
     this.pose.x = Math.max(this.pose.x, KL.TUNING.motion.player.kickSquash); // the strike's recoil
     if (kind !== 'super') this.addSuper(KL.TUNING.super.perKick);
     this.bus.emit('KICK', { player: this.index, kind, x: ball.x, y: ball.y });

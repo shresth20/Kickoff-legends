@@ -1,13 +1,19 @@
 /* Match HUD: scoreboard plate (flag + name + score each side, gold timer crest), the on-screen
  * controller (KL.TouchControls — its Super button carries the charge ring), the CPU's super bar,
  * reactions drawer, pause button, goal/kickoff banners.
- * Lives in its own scene layered over Match so pausing never touches game objects. */
+ * Lives in its own scene layered over Match so pausing never touches game objects.
+ * Like a native game's HUD it is anchored to the screen, not the pitch (KL.View): the scoreboard to
+ * the top centre, pause to the top-right corner, reactions to the left edge, the pad to the bottom
+ * corners — all inside the safe area — and a phone shows it all scaled up (KL.View.ui). */
 window.KL = window.KL || {};
 
-/** Scoreboard geometry in logical px, relative to the plate centre (x = screen centre, y). */
+/** Scoreboard geometry in logical px, relative to the plate centre (x = screen centre, y below the top safe edge). */
 KL.HUD_SCOREBOARD = {
   version: 1, // bump to repaint after changing the numbers below
   y: 62,
+  // a phone scales the plate by this share of its UI scale (the header stays compact: it is read,
+  // not touched)
+  phoneScale: 0.6,
   shieldW: 100, shieldTop: -58, shieldTip: 56, // timer crest
   boxX: 96, boxW: 64, boxH: 54, // score boxes (centre x)
   plateIn: 142, plateOut: 318, plateH: 42, // name bars
@@ -33,38 +39,43 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
 
     // Scoreboard plate, painted in code (see paintScoreboard): every slot below has a fixed,
     // measured size, and the text placed in it is shrunk to fit so nothing spills or gets cut.
+    // One container, laid out around the plate centre, so it can be anchored and scaled as a whole.
     const SB = KL.HUD_SCOREBOARD;
-    const y = SB.y;
-    KL.Paint.place(this, cx, y, this.paintScoreboard());
+    const sb = (this.scoreboard = this.add.container(cx, SB.y));
+    const add = (o) => (sb.add(o), o);
+    add(KL.Paint.place(this, 0, 0, this.paintScoreboard()));
     for (const [i, sgn] of [[0, -1], [1, 1]]) {
       const fr = `flag_${this.defs[i].flag}`;
       if (KL.hasUiFrame(this, fr)) {
-        const f = this.add.image(cx + sgn * SB.flagX, y, 'ui', fr);
+        const f = add(this.add.image(sgn * SB.flagX, 0, 'ui', fr));
         KL.fit(f, SB.flagR * 2 - 6, SB.flagR * 2 - 6);
       }
     }
     const nameX = (SB.plateIn + SB.plateOut) / 2 + 4;
     const nameW = SB.plateOut - SB.plateIn - 34;
-    KL.fitText(KL.bodyText(this, cx - nameX, y, this.defs[0].name, 19, '#ffffff', { weight: 'heavy' }), nameW);
-    KL.fitText(KL.bodyText(this, cx + nameX, y, `CPU ${this.defs[1].name}`, 19, '#ffffff', { weight: 'heavy' }), nameW);
+    add(KL.fitText(KL.bodyText(this, -nameX, 0, this.defs[0].name, 19, '#ffffff', { weight: 'heavy' }), nameW));
+    add(KL.fitText(KL.bodyText(this, nameX, 0, `CPU ${this.defs[1].name}`, 19, '#ffffff', { weight: 'heavy' }), nameW));
     this.scoreBoxW = SB.boxW - 12;
-    this.scoreL = KL.displayText(this, cx - SB.boxX, y, '0', 40, '#ffffff');
-    this.scoreR = KL.displayText(this, cx + SB.boxX, y, '0', 40, '#ffffff');
-    this.clock = KL.displayText(this, cx, y - 9, String(KL.TUNING.match.durationSec), 46, '#1B1F3B', { style: { stroke: '#ffffff', strokeThickness: 5, shadow: { offsetX: 0, offsetY: 0 } } });
-    this.clockLabel = KL.fitText(KL.bodyText(this, cx, y + 29, KL.t('hud_time'), 11, '#1B1F3B', { weight: 'heavy' }), SB.shieldW * 0.5);
+    this.scoreL = add(KL.displayText(this, -SB.boxX, 0, '0', 40, '#ffffff'));
+    this.scoreR = add(KL.displayText(this, SB.boxX, 0, '0', 40, '#ffffff'));
+    this.clock = add(KL.displayText(this, 0, -9, String(KL.TUNING.match.durationSec), 46, '#1B1F3B', { style: { stroke: '#ffffff', strokeThickness: 5, shadow: { offsetX: 0, offsetY: 0 } } }));
+    this.clockLabel = add(KL.fitText(KL.bodyText(this, 0, 29, KL.t('hud_time'), 11, '#1B1F3B', { weight: 'heavy' }), SB.shieldW * 0.5));
 
     // on-screen controller (keys shown on every button; touch / mouse playable)
     this.match = this.scene.get('Match');
     const live = () => !this.match.paused && !this.match.ended;
     this.controls = new KL.TouchControls(this, { pads: this.pads, isLive: live });
     // the CPU has no buttons: its super charge is a slim bar under its name plate
-    this.cpuBar = this.buildCpuBar(cx + nameX - 6, y + SB.plateH / 2 + 13, nameW + 6);
+    this.cpuBar = this.buildCpuBar(nameX - 6, SB.plateH / 2 + 13, nameW + 6);
 
     // reactions drawer + pause for touch screens
     this.drawers = [new KL.EmoteDrawer(this, { x: 46, y: 160, dir: 1, isLive: live, onPick: (index) => this.bus.emit('EMOTE', { player: 0, index }) })];
-    new KL.Button(this, W.width - 46, 46, 'II', () => live() && this.match.togglePause(), { kind: 'icon', icon: 'ui_icons/07', width: 58, height: 58 }).setDepth(30);
+    this.pauseButton = new KL.Button(this, W.width - 46, 46, 'II', () => live() && this.match.togglePause(), { kind: 'icon', icon: 'ui_icons/07', width: 58, height: 58 }).setDepth(30);
 
     this.banner = KL.displayText(this, cx, 280, '', 110, '#f5c518').setAlpha(0).setDepth(5);
+
+    // anchor everything to the screen; re-run on every resize / rotation
+    KL.View.layout(this, (V) => this.layout(V));
 
     const b = this.bus;
     this.offs.push(
@@ -92,6 +103,20 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
       }),
     );
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.offs.forEach((o) => o()));
+  }
+
+  /**
+   * Screen anchors: the scoreboard hangs from the top safe edge, centred; pause sits in the top-right
+   * corner and the reactions button on the left edge, below the plate; the pad in the bottom corners.
+   */
+  layout(V) {
+    const SB = KL.HUD_SCOREBOARD;
+    const u = V.ui;
+    const hs = 1 + (u - 1) * SB.phoneScale; // scoreboard scale
+    this.scoreboard.setPosition(KL.TUNING.world.width / 2, V.top + SB.y * hs).setScale(hs);
+    this.pauseButton.setPosition(V.right - 46 * u, V.top + 46 * u).setBaseScale(u);
+    this.drawers[0].setLayout(V.left + 46 * u, V.top + 160 * hs, u);
+    this.controls.layout(V);
   }
 
   /** One texture for the whole plate: flag sockets, slanted name bars, score boxes, timer shield. */
@@ -231,7 +256,7 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
     if (!this.controls.setSuper(i, value)) this.setCpuBar(value);
   }
 
-  /** Slim charge bar (CPU) centred at x, y. */
+  /** Slim charge bar (CPU) centred at x, y on the scoreboard. */
   buildCpuBar(x, y, w) {
     const h = 10;
     const track = KL.Paint.paint(this, `kl:cpubar:${w}`, w + 8, h + 8, (ctx) => {
@@ -243,9 +268,9 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
       ctx.fill();
     });
     const bar = { x, y, w, h, value: 0, ready: false };
-    bar.glow = KL.Paint.place(this, x, y, KL.Paint.glow(this, Math.round(w * 0.36), 'rgba(255,140,26,0.8)')).setScale(1 / KL.RES, 0.3 / KL.RES).setVisible(false);
-    this.add.image(x, y, track).setScale(1 / KL.RES);
+    bar.glow = KL.Paint.place(this, x, y, KL.Paint.glow(this, Math.round(w * 0.36), 'rgba(255,140,26,0.8)')).setScale(1 / KL.UIRES, 0.3 / KL.UIRES).setVisible(false);
     bar.fill = this.add.graphics();
+    this.scoreboard.add([bar.glow, this.add.image(x, y, track).setScale(1 / KL.UIRES), bar.fill]);
     return bar;
   }
 
@@ -260,8 +285,8 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
       bar.fill.setAlpha(1);
       bar.glow.setVisible(ready).setAlpha(0.5);
       if (ready) {
-        this.tweens.add({ targets: bar.glow, alpha: 1, duration: 320, yoyo: true, repeat: -1 });
-        this.tweens.add({ targets: bar.fill, alpha: 0.6, duration: 320, yoyo: true, repeat: -1 });
+        this.tweens.add({ targets: bar.glow, alpha: 1, duration: KL.paced(360), yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+        this.tweens.add({ targets: bar.fill, alpha: 0.6, duration: KL.paced(360), yoyo: true, repeat: -1, ease: 'Sine.inOut' });
       }
     }
     const g = bar.fill, fw = Math.max(0, Math.min(1, value / max)) * bar.w;
@@ -290,7 +315,7 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
     this.tweens.killTweensOf(obj);
     const base = obj.fitScale ?? 1; // relative to the shrink-to-fit scale, so a pop never overflows for good
     obj.setScale(base);
-    this.tweens.add({ targets: obj, scaleX: base * s, scaleY: base * s, duration: 90, yoyo: true });
+    this.tweens.add({ targets: obj, scaleX: base * s, scaleY: base * s, duration: KL.paced(100), yoyo: true, ease: 'Sine.inOut' });
   }
 
   showBanner(text, color, frame) {
@@ -300,13 +325,13 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
       const img = this.add.image(W.width / 2, 290, 'ui', `ui_banners/${{ goal: '00', win: '01', lose: '02', draw: '03' }[frame]}`).setAlpha(0).setDepth(5);
       const s = KL.fit(img, 640, 220);
       img.setScale(s * 0.3);
-      this.tweens.add({ targets: img, alpha: 1, scaleX: s, scaleY: s, duration: 180, ease: 'Back.out' });
-      this.tweens.add({ targets: img, alpha: 0, delay: 1300, duration: 300, onComplete: () => img.destroy() });
+      this.tweens.add({ targets: img, alpha: 1, scaleX: s, scaleY: s, duration: KL.paced(220), ease: 'Back.out' });
+      this.tweens.add({ targets: img, alpha: 0, delay: 1300, duration: KL.paced(300), ease: 'Sine.in', onComplete: () => img.destroy() });
       return;
     }
     this.banner.setText(text).setColor(color).setAlpha(0).setScale(0.4).setAngle(-4);
     this.tweens.killTweensOf(this.banner);
-    this.tweens.add({ targets: this.banner, alpha: 1, scaleX: 1, scaleY: 1, duration: 180, ease: 'Back.out' });
-    this.tweens.add({ targets: this.banner, alpha: 0, delay: 1300, duration: 300 });
+    this.tweens.add({ targets: this.banner, alpha: 1, scaleX: 1, scaleY: 1, duration: KL.paced(220), ease: 'Back.out' });
+    this.tweens.add({ targets: this.banner, alpha: 0, delay: 1300, duration: KL.paced(300), ease: 'Sine.in' });
   }
 };

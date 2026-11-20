@@ -25,14 +25,21 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     this.physics.world.setBounds(W.wallPadding, -400, W.width - W.wallPadding * 2, W.groundY + 400);
     // one physics step per displayed frame (60, 120, 144 Hz…): a 120 Hz screen otherwise shows every
     // position twice and the ball judders. Re-checked now and then (the window may change screens).
-    this.physics.world.setFPS(KL.Motion.physicsHz());
+    // preStep() keeps it at exactly one step a frame, and runs slow motion as shorter steps.
+    this.speed = 1; // game speed: goal slow-mo × a strike's hit-stop dip (see applySpeed)
+    this.physHz = KL.Motion.physicsHz();
+    KL.Motion.setStepRate(this.physics.world, this.physHz, 1);
     this.hzCheckMs = 0;
     this.slowMo = null;
-
-    this.stadium = KL.Stadium.build(this, { night: this.cfg.night, parallax: true, bus: this.bus });
+    this.hitDip = null;
+    this.drift = 0; // how far the far stadium layers have drifted with the ball (parallax), eased
+    this.events.on(Phaser.Scenes.Events.PRE_UPDATE, this.preStep, this);
+    this.events.on(Phaser.Scenes.Events.POST_UPDATE, this.postStep, this);
 
     const defs = [KL.CHARACTERS.find((c) => c.id === this.cfg.p1Char), KL.CHARACTERS.find((c) => c.id === this.cfg.p2Char)];
     this.defs = defs;
+    // half the crowd supports each player (their flags in that player's kit)
+    this.stadium = KL.Stadium.build(this, { night: this.cfg.night, parallax: true, bus: this.bus, teams: defs.map((d) => d.kit) });
     this.goals = [new KL.Goal(this, 'left'), new KL.Goal(this, 'right')];
     this.ball = new KL.Ball(this, W.width / 2, W.groundY - 200);
     this.players = [new KL.Player(this, 0, defs[0], 'left', W.width * 0.3, this.bus), new KL.Player(this, 1, defs[1], 'right', W.width * 0.7, this.bus)];
@@ -43,9 +50,10 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
 
     this.physics.add.collider(this.ball, this.floor);
     this.physics.add.collider(this.players, this.floor);
-    // players block each other but can't shove the other one around (no bulldozing a keeper into the net)
+    // players block each other but can't shove the other one around (no bulldozing a keeper into the net),
+    // and can't stand on each other's heads (see playerContact)
     this.players.forEach((p) => (p.body.pushable = false));
-    this.physics.add.collider(this.players[0], this.players[1]);
+    this.physics.add.collider(this.players[0], this.players[1], null, this.playerContact, this);
     for (const g of this.goals) {
       this.physics.add.collider(this.ball, g.statics, () => {
         KL.audio?.play('bump');
@@ -72,7 +80,14 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     this.input.keyboard.on('keydown-ESC', () => this.togglePause());
     this.input.keyboard.on('keydown-P', () => this.togglePause());
     this.events.on(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanup());
-    this.cameras.main.setBounds(0, 0, W.width, W.height);
+    // the camera stays put on the view (KL.View, set by HiDPIPlugin): no bounds, nothing scrolls it
+
+    // a phone turned upright or a hidden tab / app switch pauses a live match (resume from the menu)
+    this.autoPause = () => !this.paused && !this.ended && this.togglePause();
+    this.onOrientation = (portrait) => portrait && this.autoPause();
+    KL.View.events.on('orientation', this.onOrientation);
+    this.game.events.on(Phaser.Core.Events.HIDDEN, this.autoPause);
+    if (KL.View.portrait) this.time.delayedCall(0, this.autoPause);
 
     this.kickoff(true);
     KL.fadeIn(this);
@@ -84,7 +99,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     const b = this.bus;
     this.audioOffs = [
       b.on('KICK', (e) => {
-        a.play(e.kind === 'super' ? 'super_fire' : e.kind === 'header' ? 'header' : e.kind === 'high' ? 'kick_soft' : 'kick_hard');
+        a.play({ super: 'super_fire', header: 'header', high: 'kick_long', clash: 'kick_soft' }[e.kind] ?? 'kick_hard');
         if (e.kind === 'header') this.stats.headers[e.player]++;
         else if (e.kind === 'super') this.stats.supers[e.player]++;
         else if (e.kind !== 'clash') this.stats.shots[e.player]++;
@@ -131,10 +146,27 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     this.bus.emit('PAUSE', { paused: this.paused });
   }
 
+  /**
+   * Before the physics step (PRE_UPDATE). Advances the game speed — the goal slow-mo and a strike's
+   * hit-stop dip; it runs even once the match has ended, as a golden goal ends it mid slow-mo and that
+   * must still ease out — and keeps the physics at exactly one step per displayed frame.
+   */
+  preStep(time, delta) {
+    if (this.paused) return;
+    if (this.slowMo || this.hitDip) {
+      if (this.slowMo) this.advanceSlowMo(delta);
+      if (this.hitDip) this.advanceHitDip(delta);
+      this.applySpeed();
+    }
+    KL.Motion.lockStepPhase(this.physics.world);
+  }
+
+  /** After the bodies have moved their sprites (POST_UPDATE): whatever follows a player goes with them. */
+  postStep() {
+    this.headEmotes?.update();
+  }
+
   update(time, delta) {
-    this.headEmotes.update();
-    // before the `ended` return: a golden goal ends the match mid slow-mo, and it must still ease out
-    if (this.slowMo && !this.paused) this.updateSlowMo(delta);
     if (this.paused || this.ended) return;
     const dt = Math.min(delta, 50) / 1000;
     const W = KL.TUNING.world;
@@ -142,7 +174,10 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     if ((this.hzCheckMs += delta) > 2000) {
       this.hzCheckMs = 0;
       const hz = KL.Motion.physicsHz();
-      if (hz !== this.physics.world.fps) this.physics.world.setFPS(hz);
+      if (hz !== this.physHz) {
+        this.physHz = hz;
+        KL.Motion.setStepRate(this.physics.world, hz, this.speed);
+      }
     }
 
     // rules
@@ -170,6 +205,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
       this.players[i].intent = this.inputs[i].update(dt);
       this.players[i].step(this.ball, dt);
     }
+    this.slipOffHeads();
 
     // bodies block the ball (heads bounce it, chests trap it); the super ball ignores the victim
     if (!this.ball.isSuper) this.ballVsBodies();
@@ -201,11 +237,40 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     // a ball in (or passing behind) a goal's near side netting is drawn behind it
     this.ball.setBehindNet(this.goals.some((g) => g.hides(this.ball)));
 
-    // camera: subtle follow of the ball + slight zoom when action is central
-    const cam = this.cameras.main;
+    // the far stadium layers drift a few px with the ball (parallax), eased so they glide with it rather
+    // than twitching at every bounce. (The camera itself stays put: its bounds are the view.)
     const targetX = Phaser.Math.Clamp(this.ball.x, W.width / 2 - 60, W.width / 2 + 60);
-    cam.scrollX += (targetX - W.width / 2 - cam.scrollX) * 0.05;
-    this.stadium.update(cam.scrollX);
+    this.drift = KL.Motion.damp(this.drift, (targetX - W.width / 2) * 0.05, 4, dt);
+    this.stadium.update(this.drift);
+  }
+
+  /**
+   * Player vs player process callback. Side by side they block each other as usual (Arcade separates
+   * them sideways). But nobody lands on a head: Arcade would treat the head as floor, so the top player
+   * could stand there and jump again, and each flicker of the contact was a fresh landing with its own
+   * dust cloud. So feet that meet a head from above are only held on it for this step, never grounded,
+   * and slipOffHeads() slides them off.
+   */
+  playerContact(a, b) {
+    const [top, under] = a.body.bottom <= b.body.bottom ? [a, b] : [b, a];
+    const tb = top.body, ub = under.body;
+    // feet coming down onto the head (not rising past it), no deeper in than this step's movement:
+    // they met from above. Otherwise it's side by side
+    if (tb.deltaY() < ub.deltaY()) return true;
+    if (tb.bottom - ub.top > tb.deltaAbsY() + ub.deltaAbsY() + this.physics.world.OVERLAP_BIAS) return true;
+    tb.y = ub.top - tb.height;
+    tb.updateCenter();
+    tb.velocity.y = Math.min(tb.velocity.y, ub.velocity.y); // a head jumping up carries them with it
+    return false;
+  }
+
+  /** Runs after both players' step(): anyone whose feet are on the other's head slides off it. */
+  slipOffHeads() {
+    const [a, b] = this.players;
+    for (const [top, under] of [[a, b], [b, a]]) {
+      if (top.isOnHeadOf(under)) top.slipOff(under);
+      else top.slipDir = 0;
+    }
   }
 
   /**
@@ -215,7 +280,9 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
    * other, it's a scrum: see squirt().
    */
   ballVsBodies() {
-    const touch = this.players.map((p) => this.ballTouches(p));
+    // a ball just struck leaves through the kicker's own legs (else a strike from close in was shoved
+    // sideways, or popped out over the kicker's head)
+    const touch = this.players.map((p, i) => !this.ball.passesThrough(i) && this.ballTouches(p));
     if (this.squirting) {
       // on its way out of a scrum: through both bodies until it's clear of them (or drops back)
       if (touch.some(Boolean) && this.ball.body.velocity.y < 0) return;
@@ -225,7 +292,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     const i = touch.indexOf(true);
     if (i < 0) return;
     this.resolveBallBody(this.players[i]);
-    if (this.ballTouches(this.players[1 - i])) this.squirt();
+    if (!this.ball.passesThrough(1 - i) && this.ballTouches(this.players[1 - i])) this.squirt();
   }
 
   /** Scrum: the ball pops straight up out from between the players, favouring neither side, and
@@ -305,27 +372,60 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     this.players[1 - scorer].addSuper(KL.TUNING.super.perConceded);
     this.ball.setSuper(false);
     this.ball.body.setVelocity(this.ball.body.velocity.x * 0.2, 0);
-    this.stadium.cheer();
+    this.stadium.cheer(scorer); // only the scorer's fans
     this.bus.emit('GOAL', { scorer, score: [...this.rules.state.score] });
     // slow-mo, eased back to full speed (the freeze after it is the rules' goal phase timer)
-    this.slowMo = { ms: 0 };
-    this.setTimeScale(KL.TUNING.match.goalSlowMoScale);
+    this.slowMo = { ms: 0, k: KL.TUNING.match.goalSlowMoScale };
+    this.applySpeed();
   }
 
   /** Hold the goal slow-mo, then ease (sine in-out) back to real time over goalSlowMoRampMs. */
-  updateSlowMo(delta) {
-    const M = KL.TUNING.match;
-    this.slowMo.ms += delta;
-    const p = Phaser.Math.Clamp((this.slowMo.ms - M.goalSlowMoMs) / M.goalSlowMoRampMs, 0, 1);
-    this.setTimeScale(M.goalSlowMoScale + (1 - M.goalSlowMoScale) * (0.5 - 0.5 * Math.cos(Math.PI * p)));
+  advanceSlowMo(delta) {
+    const M = KL.TUNING.match, s = this.slowMo;
+    s.ms += delta;
+    const p = Phaser.Math.Clamp((s.ms - M.goalSlowMoMs) / M.goalSlowMoRampMs, 0, 1);
+    s.k = M.goalSlowMoScale + (1 - M.goalSlowMoScale) * (0.5 - 0.5 * Math.cos(Math.PI * p));
     if (p >= 1) this.slowMo = null;
   }
 
-  /** Game speed: the scene clock, the physics and every sprite animation slow down together. */
+  /**
+   * A strike's hit-stop (KL.FX on KICK), as a dip in game speed rather than a freeze: the world drops to
+   * juice.hitSlowFloor and eases (sine) back to full speed. Over dur = 2·ms / (1 − floor) that costs `ms`
+   * of game time — the weight of the freeze it replaces, but the picture never stops. One at a time, like
+   * the freeze was.
+   */
+  hitStop(ms) {
+    if (this.paused || this.hitDip || !ms) return;
+    const floor = KL.TUNING.juice.hitSlowFloor ?? 0.2;
+    this.hitDip = { ms: 0, dur: (2 * ms) / (1 - floor), floor, k: floor };
+    // the players' action clocks run in real time: hold them by the game time the dip costs, so their
+    // strikes keep in step with their (slowed) animation, exactly as they did with the freeze
+    this.players.forEach((p) => p.holdFor(ms));
+    this.applySpeed();
+  }
+
+  advanceHitDip(delta) {
+    const d = this.hitDip;
+    d.ms += delta;
+    const p = Math.min(1, d.ms / d.dur);
+    d.k = d.floor + (1 - d.floor) * (0.5 - 0.5 * Math.cos(Math.PI * p));
+    if (p >= 1) this.hitDip = null;
+  }
+
+  /** The game speed now: the goal slow-mo times the hit-stop dip. */
+  applySpeed() {
+    const k = (this.slowMo?.k ?? 1) * (this.hitDip?.k ?? 1);
+    if (k !== this.speed) this.setTimeScale(k);
+  }
+
+  /** Game speed: the scene clock, the physics and every sprite animation slow down together. The
+   * physics still steps once per displayed frame, each step k × as long in game time, so slow motion
+   * stays as fluid as full speed. */
   setTimeScale(k) {
+    this.speed = k;
     this.time.timeScale = k;
-    this.physics.world.timeScale = 1 / k;
     this.anims.globalTimeScale = k;
+    KL.Motion.setStepRate(this.physics.world, this.physHz, k);
   }
 
   endMatch() {
@@ -337,6 +437,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     if (winner !== null) {
       this.players[winner].celebrate();
       this.players[1 - winner].lose();
+      this.stadium.cheer(winner);
     }
     this.bus.emit('WHISTLE', { reason: 'fulltime' });
     KL.Save.recordResult(winner);
@@ -355,13 +456,18 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     this.fx?.destroy();
     this.headEmotes?.destroy();
     this.emoteOff?.();
+    KL.View.events.off('orientation', this.onOrientation);
+    this.game.events.off(Phaser.Core.Events.HIDDEN, this.autoPause);
     this.audioOffs?.forEach((o) => o());
     this.bus?.clear();
-    this.time.timeScale = 1;
-    if (this.physics.world) this.physics.world.timeScale = 1;
+    this.events.off(Phaser.Scenes.Events.PRE_UPDATE, this.preStep, this);
+    this.events.off(Phaser.Scenes.Events.POST_UPDATE, this.postStep, this);
     this.slowMo = null;
+    this.hitDip = null;
+    this.speed = 1;
+    this.time.timeScale = 1;
+    if (this.physics.world) KL.Motion.setStepRate(this.physics.world, this.physics.world.fps, 1);
     this.anims.globalTimeScale = 1; // game-wide, like the pause below: never leave the menus in slow-mo
     this.anims.resumeAll(); // quitting/restarting from the pause menu must not leave every animation frozen
-    this._hitStopping = false;
   }
 };

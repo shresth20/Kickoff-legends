@@ -1,5 +1,7 @@
 /* Settings: a small panel with music / sound-effects volume, screen shake and language.
- * (Master volume is the speaker button on the main menu; keys are fixed, shown on the on-screen pad.) */
+ * (Master volume is the speaker button on the main menu; keys are fixed, shown on the on-screen pad.)
+ * The panel and everything on it is one group, centred in the screen's safe area and scaled to the
+ * UI scale (thumb-sized sliders and toggles on a phone), never past what fits. */
 window.KL = window.KL || {};
 
 KL.SettingsScene = class SettingsScene extends Phaser.Scene {
@@ -10,20 +12,19 @@ KL.SettingsScene = class SettingsScene extends Phaser.Scene {
     this.from = data.from || 'Menu';
   }
   create() {
-    const W = KL.TUNING.world;
     const overlay = this.from === 'Pause';
     if (!overlay) KL.Stadium.build(this, { night: false, parallax: false });
-    this.add.rectangle(0, 0, W.width, W.height, 0x0f1230, overlay ? 0.75 : 0.6).setOrigin(0).setDepth(5);
-    const cy = W.height / 2 + 10;
-    new KL.Panel(this, W.width / 2, cy, 560, 460, { title: KL.t('settings_title') }).setDepth(6);
+    KL.View.cover(this, 0x0f1230, overlay ? 0.75 : 0.6).setDepth(5);
+    // the panel group, laid out around its centre
+    const ui = this.add.container(0, 0).setDepth(6);
+    ui.add(new KL.Panel(this, 0, 0, 560, 460, { title: KL.t('settings_title') }));
 
     const s = KL.Save.settings;
-    const lx = W.width / 2 - 220; // labels
-    const wx = W.width / 2 + 20; // left edge of the widgets
-    let y = cy - 120;
+    const lx = -220; // labels
+    const wx = 20; // left edge of the widgets
+    let y = -120;
     const row = (labelKey, widget) => {
-      KL.bodyText(this, lx, y, KL.t(labelKey), 22, '#ffffff', { originX: 0 }).setDepth(7);
-      widget.setDepth(7);
+      ui.add([KL.fitText(KL.bodyText(this, lx, y, KL.t(labelKey), 22, '#ffffff', { originX: 0 }), wx - lx - 16), widget]);
       y += 62;
       return widget;
     };
@@ -45,11 +46,17 @@ KL.SettingsScene = class SettingsScene extends Phaser.Scene {
     const langBtn = row('settings_language', new KL.Button(this, wx + 60, y, s.locale.toUpperCase(), () => {
       const next = locales[(locales.indexOf(KL.I18n.locale) + 1) % locales.length];
       KL.I18n.set(next);
+      KL.View.localize();
       this.apply({ locale: next });
       this.scene.restart({ from: this.from });
     }, { kind: 'secondary', width: 120, height: 44, fontSize: 18 }));
 
-    const back = new KL.Button(this, W.width / 2, cy + 160, KL.t('menu_back'), () => this.back(), { width: 240, height: 56, fontSize: 22 }).setDepth(7);
+    const back = new KL.Button(this, 0, 160, KL.t('menu_back'), () => this.back(), { width: 240, height: 56, fontSize: 22 });
+    ui.add(back);
+    KL.View.layout(this, (V) => {
+      const k = Math.min(V.ui, (V.bottom - V.top - 20) / 470, (V.right - V.left - 20) / 570);
+      ui.setPosition(V.cx, V.cy + 10 * k).setScale(k);
+    });
 
     const nav = new KL.MenuNav(this, [...sliders, shake, langBtn, back], { onBack: () => this.back() });
     this.input.keyboard.on('keydown-LEFT', () => {

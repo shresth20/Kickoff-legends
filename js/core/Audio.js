@@ -99,9 +99,14 @@ KL.Audio = class AudioManager {
         this.tone({ freq: 220, to: 90, dur: 0.1, type: 'triangle', vol: 0.5 });
         this.tone({ freq: 900, dur: 0.05, noise: true, vol: 0.25 });
         break;
-      case 'kick_hard':
-        this.tone({ freq: 180, to: 60, dur: 0.16, type: 'sawtooth', vol: 0.6 });
-        this.tone({ freq: 1400, dur: 0.08, noise: true, vol: 0.35 });
+      case 'kick_hard': // the straight kick: a sharp, driven thwack
+        this.tone({ freq: 200, to: 60, dur: 0.15, type: 'sawtooth', vol: 0.62 });
+        this.tone({ freq: 1600, dur: 0.07, noise: true, vol: 0.4 });
+        break;
+      case 'kick_long': // the long kick: a deep boom with an airy follow-through
+        this.tone({ freq: 150, to: 42, dur: 0.24, type: 'sawtooth', vol: 0.62 });
+        this.tone({ freq: 70, to: 40, dur: 0.2, type: 'sine', vol: 0.5 });
+        this.tone({ freq: 1100, dur: 0.12, noise: true, vol: 0.38 });
         break;
       case 'header':
         this.tone({ freq: 320, to: 140, dur: 0.1, type: 'triangle', vol: 0.45 });

@@ -434,45 +434,25 @@ window.KL = window.KL || {};
         ctx.fillRect(x - 10, 236, 30, 8);
       }
     });
-    const crowd = (seed, armsUp) => (ctx) => {
-      for (let i = 0; i < 40; i++) {
-        const x = 40 + i * 64 + ((seed * 37 + i * 13) % 20);
-        const y = 440 + ((seed + i * 7) % 3) * 18 - (armsUp ? 10 : 0);
-        ctx.fillStyle = ['#e63946', '#2b6cf2', '#f5c518', '#7b3fe4', '#3dd36a'][(i + seed) % 5];
-        rr(ctx, x - 24, y, 48, 90, 10);
-        ctx.fill();
-        ctx.fillStyle = '#F2C9A0';
-        ctx.beginPath();
-        ctx.arc(x, y - 20, 26, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = '#222';
-        ctx.beginPath();
-        ctx.arc(x, y - 34, 24, Math.PI, 0);
-        ctx.fill();
-        if (armsUp) {
-          ctx.fillStyle = '#F2C9A0';
-          ctx.fillRect(x - 36, y - 50, 10, 50);
-          ctx.fillRect(x + 26, y - 50, 10, 50);
-        }
-      }
-      ctx.strokeStyle = 'rgba(200,205,225,0.75)';
-      ctx.lineWidth = 2;
+    // the fence between the crowd and the pitch: one tile (half a post at each end, so it repeats)
+    if (!scene.textures.exists('bg_fence')) {
+      const fw = 1555, fh = 491, c = makeCanvas(fw, fh), ctx = c.getContext('2d');
+      ctx.strokeStyle = 'rgba(40,44,90,0.9)';
+      ctx.lineWidth = 6;
       ctx.beginPath();
-      for (let x = -720; x < W; x += 28) {
-        ctx.moveTo(x, 380);
-        ctx.lineTo(x + 340, 720);
-        ctx.moveTo(x + 340, 380);
-        ctx.lineTo(x, 720);
+      for (let x = -fh; x < fw; x += 62) {
+        ctx.moveTo(x, 30);
+        ctx.lineTo(x + fh, 30 + fh);
+        ctx.moveTo(x + fh, 30);
+        ctx.lineTo(x, 30 + fh);
       }
       ctx.stroke();
-      ctx.fillStyle = '#4c527f';
-      ctx.fillRect(0, 372, W, 12);
-      ctx.fillRect(0, 590, W, 12);
-    };
-    add('bg_fence_crowd_a', crowd(1, false));
-    add('bg_fence_crowd_b', crowd(2, false));
-    add('bg_fence_crowd_c', crowd(3, false));
-    add('bg_crowd_cheer', crowd(1, true));
+      ctx.fillStyle = '#5a5aa8';
+      ctx.fillRect(0, 8, fw, 32);
+      ctx.fillRect(0, fh - 42, fw, 40);
+      for (const x of [0, fw / 2 - 16, fw - 16]) ctx.fillRect(x, 8, x === 0 || x === fw - 16 ? 16 : 32, fh - 10);
+      scene.textures.addCanvas('bg_fence', c);
+    }
     add('bg_pitch', (ctx) => {
       ctx.fillStyle = '#8a4a2f';
       ctx.fillRect(0, 0, W, 24);
@@ -491,6 +471,66 @@ window.KL = window.KL || {};
       ctx.moveTo(W - 200, 160);
       ctx.arc(W, 160, 200, Math.PI / 2, (3 * Math.PI) / 2);
       ctx.stroke();
+    });
+  }
+
+  /* ----------------------------------------------------------------- crowd */
+  /**
+   * Stand-in fans: six simple supporters, each with a calm frame and an arms-up frame, in the same
+   * cell as the sliced ones (FAN_* in tools/manifest.mjs) so Stadium.js treats them alike.
+   */
+  function makeCrowdAtlas(scene) {
+    if (scene.textures.exists('crowd')) return;
+    const CW = 208, CH = 320, FEET = 312, STAND = 240;
+    const shirts = ['#e63946', '#2b6cf2', '#f5c518', '#7b3fe4', '#3dd36a', '#ff8c2b'];
+    const canvas = makeCanvas(CW * shirts.length, CH * 2);
+    const ctx = canvas.getContext('2d');
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = INK;
+    shirts.forEach((shirt, i) => {
+      [false, true].forEach((up, row) => {
+        const cx = i * CW + CW / 2, oy = row * CH, top = oy + FEET - STAND;
+        const limb = (x0, y0, x1, y1) => {
+          ctx.lineWidth = 16;
+          ctx.strokeStyle = INK;
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+          ctx.lineWidth = 9;
+          ctx.strokeStyle = '#F2C9A0';
+          ctx.stroke();
+        };
+        // arms (up: fists over the head)
+        if (up) [-1, 1].forEach((s) => limb(cx + s * 30, top + 110, cx + s * 52, top + 10));
+        else [-1, 1].forEach((s) => limb(cx + s * 30, top + 110, cx + s * 40, top + 170));
+        // legs, body, head
+        ctx.lineWidth = 6;
+        ctx.strokeStyle = INK;
+        ctx.fillStyle = '#2b2f55';
+        rr(ctx, cx - 26, top + 160, 52, STAND - 165, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = shirt;
+        rr(ctx, cx - 36, top + 92, 72, 90, 16);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#F2C9A0';
+        ctx.beginPath();
+        ctx.arc(cx, top + 52, 42, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#3a2a20';
+        ctx.beginPath();
+        ctx.arc(cx, top + 44, 42, Math.PI, 0);
+        ctx.fill();
+      });
+    });
+    const tex = scene.textures.addCanvas('crowd', canvas);
+    shirts.forEach((_, i) => {
+      [`fan/p${pad2(i)}`, `fan/p${pad2(i)}_cheer`].forEach((name, row) => {
+        tex.add(name, 0, i * CW, row * CH, CW, CH).customData = { fan: { feet: FEET, stand: STAND } };
+      });
     });
   }
 
@@ -657,12 +697,14 @@ window.KL = window.KL || {};
       makeCharacterAtlas(scene);
       makePropsAtlas(scene);
       makeBackgrounds(scene);
+      makeCrowdAtlas(scene);
       makeFxAtlas(scene);
       makeUiAtlas(scene);
     },
     makeCharacterAtlas,
     makePropsAtlas,
     makeBackgrounds,
+    makeCrowdAtlas,
     makeFxAtlas,
     makeUiAtlas,
     _T: T,

@@ -16,11 +16,11 @@
  * Output images are WebP: lossy colour at q92 (indistinguishable from PNG on this cel-shaded art)
  * with lossless alpha, so cut-out edges stay exact. ~4× smaller than PNG.
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { ASSETS, RAW_DIR, ATLAS_DIR, BG_DIR, PREVIEW_DIR, CHAR_STAND_PX } from './manifest.mjs';
+import { ASSETS, RAW_DIR, ATLAS_DIR, BG_DIR, PREVIEW_DIR, CHAR_STAND_PX, FAN_STAND_PX, FAN_CELL_W, FAN_CELL_H, FAN_FEET_Y } from './manifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -32,6 +32,24 @@ const bgDir = resolve(root, BG_DIR);
 const previewDir = resolve(root, PREVIEW_DIR);
 for (const d of [atlasDir, bgDir, previewDir]) mkdirSync(d, { recursive: true });
 
+/**
+ * The raw PNG for an asset name: assets/image/<name>.png, else the newest "<name>.png" or
+ * "<name> (n).png" in one of its sub-folders (new art batches are dropped in as e.g. new2/). null if none.
+ */
+function rawFile(name) {
+  const direct = join(rawDir, `${name}.png`);
+  if (existsSync(direct)) return direct;
+  let best = null;
+  for (const dir of readdirSync(rawDir, { withFileTypes: true }).filter((d) => d.isDirectory())) {
+    for (const f of readdirSync(join(rawDir, dir.name))) {
+      if (!/\.png$/i.test(f) || f.replace(/\.png$/i, '').replace(/\s*\(\d+\)$/, '') !== name) continue;
+      const p = join(rawDir, dir.name, f), t = statSync(p).mtimeMs;
+      if (!best || t > best.t) best = { p, t };
+    }
+  }
+  return best?.p ?? null;
+}
+
 const MAX_ATLAS = 4096;
 /** Encoder for every generated atlas page / background strip (see header). */
 const encode = (img) => img.webp({ quality: 92, alphaQuality: 100, smartSubsample: true, effort: 6 });
@@ -39,12 +57,35 @@ const pad2 = (i) => String(i).padStart(2, '0');
 
 /* ------------------------------------------------------------------ image ops */
 
-/** Load as RGBA and key magenta → alpha. Returns {data, width, height}. */
+/** Load as RGBA and key magenta → alpha (key: true | 'unmix', see unmixMagenta). Returns {data, width, height}. */
 async function loadKeyed(file, { key = true } = {}) {
   const img = sharp(file).ensureAlpha();
   const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
-  if (key) keyMagenta(data);
+  if (key === 'unmix') unmixMagenta(data);
+  else if (key) keyMagenta(data);
   return { data, width: info.width, height: info.height };
+}
+
+/**
+ * Exact key for art whose colours are all greys / blues (red ≈ green), like the chain-link fence: its
+ * hair-thin wires are mostly blended with the magenta, which the plain key leaves as a pink cast.
+ * A pixel is a·colour + (1−a)·magenta; magenta has no green and full red, so with red ≈ green in the
+ * colour, a = 1 − (red − green) / 255, and the colour is recovered by taking the magenta back out.
+ */
+function unmixMagenta(data) {
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const a = Math.min(1, Math.max(0, 1 - (r - g) / 255));
+    if (a < 0.12) {
+      data[i + 3] = 0;
+      continue;
+    }
+    const un = (v) => Math.min(255, Math.max(0, Math.round((v - (1 - a) * 255) / a)));
+    data[i] = Math.min(un(r), Math.round(g / a) + 12); // keep red ≈ green (no leftover pink)
+    data[i + 1] = Math.min(255, Math.round(g / a));
+    data[i + 2] = un(b);
+    data[i + 3] = Math.round(data[i + 3] * a);
+  }
 }
 
 /** In-place chroma key for the flat #FF00FF background with edge de-spill. */
@@ -222,7 +263,7 @@ const calibCache = new Map();
 async function charCalib(charId) {
   if (calibCache.has(charId)) return calibCache.get(charId);
   const idleSpec = ASSETS.find((a) => a.name === `${charId}_idle`);
-  const img = await loadKeyed(join(rawDir, `${charId}_idle.png`));
+  const img = await loadKeyed(rawFile(`${charId}_idle`));
   const { bands: cols } = bands(img, bbox(img), idleSpec.cols, 'x');
   const boxes = cols.map((r) => mainBox(img, r));
   const standH = Math.max(...boxes.map((b) => b.h));
@@ -307,7 +348,7 @@ class Atlas {
   }
 }
 
-const atlases = Object.fromEntries(['characters', 'props', 'ui', 'fx'].map((k) => [k, new Atlas(k)]));
+const atlases = Object.fromEntries(['characters', 'props', 'ui', 'fx', 'crowd'].map((k) => [k, new Atlas(k)]));
 const report = [];
 
 /**
@@ -488,6 +529,137 @@ async function emitGoal(img, spec) {
   if (PREVIEW) await writePreview(atlas.items.slice(-(ripple.length + 1)), spec.name);
 }
 
+/**
+ * Split a line-up of `n` fans into one owner per pixel (fan index, or -1 for air).
+ * The fans stand close: raised fists touch their neighbours' and the ground shadows run together, so
+ * a pixel can't simply go to its connected piece. Instead:
+ *   - the gaps between fans are measured over their torsos and legs (fists and shadows touch);
+ *   - every fan grows outwards from the middle of its own torso through the drawing (breadth first, all
+ *     fans at once), so each pixel goes to the fan it is nearest to *along the drawing* — a fist joins
+ *     the body it is attached to, not the neighbour whose fist it touches;
+ *   - loose bits that no fan reaches (sparkles…) go to the fan on their side of the gap.
+ * Per fan: its box, feet line (bottom of its shadow), legs centre (where it stands) and standing height
+ * (feet to the top of the head, read over the legs centre so fists beside the head don't count).
+ */
+function splitFans(img, n) {
+  const W = img.width, H = img.height;
+  const c = bbox(img, 0, 0, W, H, 128);
+  const shadowTop = c.y + Math.round(c.h * 0.955);
+  const torsoTop = c.y + Math.round(c.h * 0.35);
+  const { bands: cols, method } = bands(img, { x: c.x, y: torsoTop, w: c.w, h: shadowTop - torsoTop }, n, 'x');
+  const cuts = cols.slice(1).map((b, i) => Math.round((cols[i].x + cols[i].w + b.x) / 2));
+  const side = (x) => {
+    let i = 0;
+    while (i < cuts.length && x >= cuts[i]) i++;
+    return i;
+  };
+  const solid = (i) => img.data[i * 4 + 3] > 8;
+  const owner = new Int8Array(W * H).fill(-1);
+  const queue = new Int32Array(W * H);
+  let head = 0, tail = 0;
+  // seeds: the middle of each fan's torso (its own column band, a little in from the edges)
+  cols.forEach((b, i) => {
+    const m = Math.round(b.w * 0.2);
+    for (let y = torsoTop + Math.round((shadowTop - torsoTop) * 0.1); y < torsoTop + Math.round((shadowTop - torsoTop) * 0.45); y++) {
+      for (let x = b.x + m; x < b.x + b.w - m; x++) {
+        const p = y * W + x;
+        if (solid(p) && owner[p] < 0) (owner[p] = i), (queue[tail++] = p);
+      }
+    }
+  });
+  while (head < tail) {
+    const p = queue[head++], px = p % W, py = (p / W) | 0, who = owner[p];
+    for (let dy = -1; dy <= 1; dy++) {
+      const yy = py + dy;
+      if (yy < c.y || yy >= c.y + c.h) continue;
+      for (let dx = -1; dx <= 1; dx++) {
+        const xx = px + dx, q = yy * W + xx;
+        if (xx < c.x || xx >= c.x + c.w || owner[q] >= 0 || !solid(q)) continue;
+        owner[q] = who;
+        queue[tail++] = q;
+      }
+    }
+  }
+  for (let y = c.y; y < c.y + c.h; y++) for (let x = c.x; x < c.x + c.w; x++) if (owner[y * W + x] < 0 && solid(y * W + x)) owner[y * W + x] = side(x);
+
+  const fans = [];
+  for (let i = 0; i < n; i++) {
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (let y = c.y; y < c.y + c.h; y++) {
+      for (let x = c.x; x < c.x + c.w; x++) {
+        if (owner[y * W + x] !== i) continue;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    if (x1 < 0) throw new Error(`fan ${i} is empty`);
+    let sx = 0, cnt = 0;
+    for (let y = Math.round(y1 - (y1 - y0) * 0.25); y < shadowTop; y++) for (let x = x0; x <= x1; x++) if (owner[y * W + x] === i) (sx += x), cnt++;
+    const legsCx = cnt ? sx / cnt : (x0 + x1) / 2;
+    const hw = Math.round(c.h * 0.035);
+    let head = y1;
+    for (let y = y0; y <= y1 && head === y1; y++) for (let x = Math.round(legsCx - hw); x <= legsCx + hw; x++) if (owner[y * W + x] === i) (head = y), (x = Infinity);
+    fans.push({ box: { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 }, feet: y1 + 1, legsCx, standH: y1 + 1 - head });
+  }
+  return { owner, fans, method };
+}
+
+/**
+ * Fans: a calm line-up and the same line-up arms-up (spec.cheer). Every fan becomes two frames of one
+ * FAN_CELL — `fan/<out><nn>` and `fan/<out><nn>_cheer` — standing on the same feet line with the middle
+ * of its legs on the cell's centre line, so swapping the frames never moves the fan. The two sheets draw
+ * the line-up at different sizes, so each sheet gets its own scale: its median fan stands FAN_STAND_PX
+ * tall (kids stay smaller than grown-ups).
+ */
+async function emitFans(spec, calmImg, cheerImg) {
+  const median = (a) => [...a].sort((p, q) => p - q)[a.length >> 1];
+  const sheets = [calmImg, cheerImg].map((img) => {
+    const s = { img, ...splitFans(img, spec.cols) };
+    s.scale = FAN_STAND_PX / median(s.fans.map((f) => f.standH));
+    return s;
+  });
+  const atlas = atlases[spec.atlas];
+  const added = [];
+  for (let i = 0; i < spec.cols; i++) {
+    const [a, b] = sheets.map((s) => s.fans[i].standH * s.scale);
+    if (Math.abs(a / b - 1) > 0.08) report.push(`NOTE ${spec.name} fan ${i}: calm ${a.toFixed(0)} px vs cheer ${b.toFixed(0)} px tall (hands over the head?)`);
+    for (const [k, s] of sheets.entries()) {
+      const f = s.fans[i], { box } = f, W = s.img.width;
+      // this fan only: a neighbour's fist or shadow inside its box is left out
+      const buf = Buffer.alloc(box.w * box.h * 4);
+      for (let y = 0; y < box.h; y++) {
+        for (let x = 0; x < box.w; x++) {
+          const p = (box.y + y) * W + box.x + x;
+          if (s.owner[p] === i) s.img.data.copy(buf, (y * box.w + x) * 4, p * 4, p * 4 + 4);
+        }
+      }
+      const w = Math.max(1, Math.round(box.w * s.scale)), h = Math.max(1, Math.round(box.h * s.scale));
+      let offX = Math.round(FAN_CELL_W / 2 - (f.legsCx - box.x) * s.scale);
+      let offY = Math.round(FAN_FEET_Y - (f.feet - box.y) * s.scale);
+      if (offX < 0 || offY < 0 || offX + w > FAN_CELL_W || offY + h > FAN_CELL_H) report.push(`WARN ${spec.name} fan ${i}${k ? ' cheer' : ''}: ${w}×${h} clipped by the ${FAN_CELL_W}×${FAN_CELL_H} cell`);
+      offX = Math.max(0, Math.min(FAN_CELL_W - w, offX));
+      offY = Math.max(0, Math.min(FAN_CELL_H - h, offY));
+      const buffer = await sharp(buf, { raw: { width: box.w, height: box.h, channels: 4 } }).resize(w, h, { kernel: 'lanczos3' }).png().toBuffer();
+      const item = { name: `fan/${spec.out}${pad2(i)}${k ? '_cheer' : ''}`, buffer, w, h, cellW: FAN_CELL_W, cellH: FAN_CELL_H, offX, offY, data: { fan: { feet: FAN_FEET_Y, stand: FAN_STAND_PX } } };
+      atlas.add(item);
+      added.push(item);
+    }
+  }
+  if (PREVIEW) {
+    // calm line-up on top, cheer line-up below, on the feet line
+    const n = spec.cols, comps = [];
+    added.forEach((it, j) => comps.push({ input: it.buffer, left: (j >> 1) * FAN_CELL_W + it.offX, top: (j & 1) * FAN_CELL_H + it.offY }));
+    const lines = Buffer.from(`<svg width="${FAN_CELL_W * n}" height="${FAN_CELL_H * 2}"><path d="M0 ${FAN_FEET_Y}H${FAN_CELL_W * n}M0 ${FAN_CELL_H + FAN_FEET_Y}H${FAN_CELL_W * n}" stroke="#00ffff"/>${Array.from({ length: n }, (_, i) => `<path d="M${(i + 0.5) * FAN_CELL_W} 0V${FAN_CELL_H * 2}" stroke="#00ffff" stroke-opacity="0.4"/>`).join('')}</svg>`);
+    await sharp({ create: { width: FAN_CELL_W * n, height: FAN_CELL_H * 2, channels: 4, background: { r: 255, g: 0, b: 255, alpha: 1 } } })
+      .composite([{ input: lines, left: 0, top: 0 }, ...comps])
+      .png()
+      .toFile(join(previewDir, `fans_${spec.out}.png`));
+  }
+  return sheets.map((s) => s.method);
+}
+
 /** Contact sheet for free-aspect pieces (buttons, banners, logo…). */
 async function writePreview(items, name) {
   const H = Math.max(...items.map((it) => it.h));
@@ -505,17 +677,28 @@ async function writePreview(items, name) {
 }
 
 async function processAsset(spec) {
-  const file = join(rawDir, `${spec.name}.png`);
-  if (!existsSync(file)) {
+  const file = rawFile(spec.name);
+  if (!file) {
     report.push(`SKIP ${spec.name} (no raw file)`);
+    return;
+  }
+  if (spec.kind === 'fans') {
+    const cheerFile = rawFile(spec.cheer);
+    if (!cheerFile) {
+      report.push(`SKIP ${spec.name} (no raw file for ${spec.cheer})`);
+      return;
+    }
+    const methods = await emitFans(spec, await loadKeyed(file), await loadKeyed(cheerFile));
+    report.push(`OK   ${spec.name} + ${spec.cheer} → ${spec.atlas}:fan/${spec.out}00..${pad2(spec.cols - 1)} (+ _cheer) (${methods.join(' / ')})`);
     return;
   }
   if (spec.kind === 'background') {
     // Layer strips keep their aspect; Stadium.js places each one in its own screen band.
     const needsKey = !/sky/.test(spec.name);
-    const img = await loadKeyed(file, { key: needsKey });
+    const img = await loadKeyed(file, { key: needsKey && (spec.key ?? true) });
     const full = { x: 0, y: 0, w: img.width, h: img.height };
-    const content = needsKey ? bbox(img, 0, 0, img.width, img.height, 128) ?? full : full;
+    const [cx0, cy0, cx1, cy1] = spec.crop ?? [];
+    const content = spec.crop ? { x: cx0, y: cy0, w: cx1 - cx0, h: cy1 - cy0 } : needsKey ? bbox(img, 0, 0, img.width, img.height, 128) ?? full : full;
     const regions = spec.rows ? bands(img, content, spec.rows, 'y').bands.map((r) => bbox(img, r.x, r.y, r.x + r.w, r.y + r.h, 128) ?? r) : [content];
     const outs = spec.outs ?? [spec.name];
     for (let i = 0; i < outs.length; i++) {

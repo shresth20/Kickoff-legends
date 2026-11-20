@@ -1,7 +1,9 @@
 /* UI toolkit. Flat elements (buttons, panels, key caps) are painted in code by
  * KL.Paint at device resolution, so they stay sharp at any size; illustrated art
  * (icons, flags, logo, banners) still comes from the `ui` atlas. Text is rasterised
- * at KL.RES and padded so slanted display glyphs never get clipped. */
+ * at KL.UIRES and padded so slanted display glyphs never get clipped.
+ * Widgets are containers, so a screen scales a whole group for touch (KL.View.ui) with setScale;
+ * Button.setBaseScale keeps its press bounce relative to that. */
 window.KL = window.KL || {};
 
 (() => {
@@ -78,7 +80,7 @@ window.KL = window.KL || {};
       // Bangers is slanted, so glyphs (and the block shadow) overhang the measured box: pad the
       // text canvas so the last digit is never cut. Symmetric, so centring is unchanged.
       padding: { x: Math.ceil(size * (F.slant ? 0.16 : 0.1)), y: Math.ceil(size * 0.12) },
-      resolution: KL.RES,
+      resolution: KL.UIRES,
       ...opts.style,
     });
     t.setOrigin(opts.originX ?? 0.5, opts.originY ?? 0.5);
@@ -98,7 +100,7 @@ window.KL = window.KL || {};
       lineSpacing: opts.lineSpacing ?? 4,
       // Devanagari matras reach well above and below the Latin box: Teko gets more vertical room
       padding: { x: Math.ceil(size * 0.1), y: Math.ceil(size * F.padY) },
-      resolution: KL.RES,
+      resolution: KL.UIRES,
       ...opts.style,
     });
     t.setOrigin(opts.originX ?? 0.5, opts.originY ?? 0.5);
@@ -133,7 +135,13 @@ window.KL = window.KL || {};
 
       this.face = scene.add.image(0, 0, '__DEFAULT');
       this.add(this.face);
-      if (opts.icon && hasFrame(scene, opts.icon)) {
+      this.baseScale = 1;
+      if (opts.iconSpec) {
+        // an icon painted in code (KL.Paint spec), e.g. the full-screen brackets
+        this.iconSize = Math.round(this.kind === 'icon' ? this.h * 0.66 : Math.min(36, this.h * 0.58));
+        this.icon = KL.Paint.place(scene, 0, 0, opts.iconSpec);
+        this.add(this.icon);
+      } else if (opts.icon && hasFrame(scene, opts.icon)) {
         this.iconSize = Math.round(this.kind === 'icon' ? this.h * 0.66 : Math.min(36, this.h * 0.58));
         this.icon = scene.add.image(0, 0, 'ui', opts.icon);
         KL.fit(this.icon, this.iconSize, this.iconSize);
@@ -172,6 +180,17 @@ window.KL = window.KL || {};
       this.layout();
       return this;
     }
+    /** Scale of the whole button (touch screens show it larger); the press bounce stays relative to it. */
+    setBaseScale(s) {
+      this.baseScale = s;
+      this.scene.tweens.killTweensOf(this);
+      return this.setScale(s);
+    }
+    /** Swap a painted icon (KL.Paint spec). */
+    setIconSpec(spec) {
+      this.icon?.setTexture(spec.key).setOrigin(spec.ox, spec.oy);
+      return this;
+    }
     /** Swap the icon art (e.g. sound on ↔ muted). */
     setIcon(frame) {
       if (!this.icon || !hasFrame(this.scene, frame)) return this;
@@ -199,14 +218,17 @@ window.KL = window.KL || {};
     activate() {
       if (this.disabled) return;
       KL.audio?.play('ui_click');
-      this.scene.tweens.add({ targets: this, scaleX: 0.94, scaleY: 0.94, duration: 60, yoyo: true });
+      const s = this.baseScale;
+      this.scene.tweens.killTweensOf(this);
+      this.setScale(s);
+      this.scene.tweens.add({ targets: this, scaleX: s * 0.94, scaleY: s * 0.94, duration: KL.paced(70), yoyo: true, ease: 'Sine.inOut' });
       this.onClick?.();
     }
 
     redraw() {
       const state = this.disabled ? 3 : this.pressed ? 2 : this.hover || this.focused ? 1 : 0;
       const spec = KL.Paint.button(this.scene, this.kind, state, this.w, this.h);
-      this.face.setTexture(spec.key).setOrigin(spec.ox, spec.oy).setScale(1 / KL.RES);
+      this.face.setTexture(spec.key).setOrigin(spec.ox, spec.oy).setScale(1 / KL.UIRES);
       const dy = state === 2 ? spec.lip - 1 : 0; // contents ride down with the pressed face
       if (this.label) {
         this.label.setY(dy);
@@ -251,7 +273,12 @@ window.KL = window.KL || {};
       this.add(this.knob);
       this.setSize(width + 30, 40);
       this.setInteractive({ useHandCursor: true });
-      const set = (p) => this.set(Phaser.Math.Clamp((KL.worldPoint(scene, p).x - (this.x - width / 2)) / width, 0, 1), true);
+      // the pointer in the slider's own space, so it works inside a scaled / moved panel
+      const local = (p) => {
+        const w = KL.worldPoint(scene, p);
+        return this.getWorldTransformMatrix().applyInverse(w.x, w.y).x;
+      };
+      const set = (p) => this.set(Phaser.Math.Clamp((local(p) + width / 2) / width, 0, 1), true);
       this.on('pointerdown', (p) => {
         this.dragging = true;
         set(p);
@@ -352,9 +379,24 @@ window.KL = window.KL || {};
     }
   };
 
+  /**
+   * Full-screen on / off (square icon button, placed by the caller), or null where the page can't go
+   * full screen (iPhone Safari) or already is an installed full-screen app. Its glyph follows the state.
+   */
+  KL.fullscreenButton = (scene) => {
+    const F = KL.Fullscreen;
+    if (!F?.supported || F.standalone) return null;
+    const spec = (on) => KL.Paint.fullscreenIcon(scene, 40, on);
+    const btn = new KL.Button(scene, 0, 0, '⛶', () => F.toggle(), { kind: 'icon', iconSpec: spec(F.active) }).setDepth(7);
+    const sync = (on) => btn.active && btn.setIconSpec(spec(on));
+    KL.View.events.on('fullscreen', sync);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => KL.View.events.off('fullscreen', sync));
+    return btn;
+  };
+
   /** Fade helpers used by every scene transition. */
-  KL.fadeIn = (scene, ms = 250) => scene.cameras.main.fadeIn(ms, 15, 18, 48);
-  KL.goTo = (scene, key, data, ms = 250) => {
+  KL.fadeIn = (scene, ms = KL.paced(280)) => scene.cameras.main.fadeIn(ms, 15, 18, 48);
+  KL.goTo = (scene, key, data, ms = KL.paced(280)) => {
     if (scene._leaving) return;
     scene._leaving = true;
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => (scene._leaving = false)); // scene instances are reused

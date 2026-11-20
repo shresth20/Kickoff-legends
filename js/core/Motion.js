@@ -2,7 +2,9 @@
  *  - damp / approach: frame-rate independent easing towards a target;
  *  - Spring: a damped spring for squash & stretch, lean and recoil (overshoots a little, then settles);
  *  - refresh tracking: the match steps its physics at the display's refresh rate, so a 120 Hz screen
- *    gets a new position every frame instead of the same one twice (the classic 60 Hz-physics judder).
+ *    gets a new position every frame instead of the same one twice (the classic 60 Hz-physics judder);
+ *  - step pacing: exactly one physics step per displayed frame (lockStepPhase), and slow motion as
+ *    shorter steps rather than skipped frames (setStepRate).
  * Nothing here moves anything in the physics world; it only shapes how things look. */
 window.KL = window.KL || {};
 
@@ -84,6 +86,37 @@ window.KL = window.KL || {};
     return snapHz(1000 / s[s.length >> 1]);
   };
 
+  // ---- fixed-step pacing ------------------------------------------------------------------------
+  /**
+   * Run an Arcade world at `hz` steps per real second, each step `speed` × 1/hz of game time.
+   * Slow motion takes shorter steps, one per displayed frame, instead of the same step every few
+   * frames (that read as the players and the ball hopping along in jerks).
+   */
+  const setStepRate = (world, hz, speed = 1) => {
+    if (world.fps !== hz) world.setFPS(hz);
+    world.timeScale = 1;
+    world._frameTime = speed / hz; // Arcade's step length; _frameTimeMS (real ms per step) stays 1000/hz
+  };
+
+  /**
+   * Call once per frame before the world updates. Keeps the time left over after the last step about
+   * half a step from the next one, so a frame that lasts one refresh always runs exactly one step.
+   * (Left alone, the leftover sits on the boundary from the start: timing noise of a fraction of a
+   * millisecond then made about one frame in seven run no step and the next one two, so the picture
+   * held for a frame and then jumped.) The pull is gentle: a dropped frame is still caught up, and
+   * game speed stays within 0.1 % of real time.
+   */
+  const lockStepPhase = (world, pull = 0.1) => {
+    if (world.isPaused || !world.fixedStep) return;
+    const F = world._frameTimeMS * world.timeScale;
+    if (world._elapsed >= 0 && world._elapsed < F) world._elapsed += (F * 0.5 - world._elapsed) * pull;
+  };
+
+  /** Look-only playback speed (KL.TUNING.motion.animPace; 1 = as authored, below 1 = slower). */
+  KL.animPace = () => KL.TUNING?.motion?.animPace || 1;
+  /** A look-only duration (a UI tween, an effect) in ms at that pace. */
+  KL.paced = (ms) => ms / KL.animPace();
+
   KL.Motion = {
     damp,
     approach,
@@ -92,6 +125,8 @@ window.KL = window.KL || {};
     snapHz,
     trackRefresh,
     physicsHz,
+    setStepRate,
+    lockStepPhase,
     /** OS "reduce motion": squash and after-images are toned down. */
     reduced: !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
   };

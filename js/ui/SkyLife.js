@@ -19,7 +19,9 @@ KL.SKY_LIFE = {
   cloudBreathe: 0.012, // ± scale: the puffs swell and settle a touch
   cloudBreathePeriod: [10, 16], // s
   // one flock per `slot` seconds at most (chance of one), crossing in ~25-35 s; day sky only
-  birds: { slot: 40, chance: 0.7, size: [2, 5], speed: [42, 60], span: [18, 26], y: [25, 150], margin: 60, factor: 0.16 },
+  // margin: the flocks fly in and out this far past the design area, beyond the widest view
+  // (KL.STADIUM_MARGIN); slot: long enough for the slowest flock to cross before the next takes off
+  birds: { slot: 50, chance: 0.7, size: [2, 5], speed: [42, 60], span: [18, 26], y: [25, 150], margin: 250, factor: 0.16 },
   starTwinkle: [2.4, 6], // s per twinkle
   sparkleMin: 13, // painted stars smaller than this (sky texture px) are left out: only sparkles are drawn
   meteor: { slot: 34, chance: 0.55, duration: [0.9, 1.3], length: [120, 180], travel: [200, 300] },
@@ -262,8 +264,10 @@ KL.SKY_LIFE = {
       const R = KL.RES;
       const s = sky.scaleX; // sky texture px → logical px
       const at = (u, v) => [sky.x + u * s, sky.y + v * s];
-      const factor = parallax ? sky.factor : 1;
+      const M = KL.STADIUM_MARGIN ?? 0; // the sky runs this far past each side of the design area
       const parts = []; // (t) => void
+      // No scroll factors: the camera never scrolls (it sits on the view's offset, KL.View), so the
+      // sky life moves with the sky layer like everything else.
 
       // clouds: drift with the wind and wrap around just out of view; the nearer, the faster
       if (data?.sheet) {
@@ -271,14 +275,15 @@ KL.SKY_LIFE = {
         data.clouds.forEach((c, i) => {
           const near = c.f[2] / maxW;
           const [x, y] = at(c.x + c.f[2] / 2, c.y + c.f[3]);
-          const img = scene.add.image(x, y, data.sheet, c.name).setOrigin(0.5, 1).setScale(s).setDepth(DEPTH.clouds + near * 0.05).setScrollFactor(factor, 1);
+          const img = scene.add.image(x, y, data.sheet, c.name).setOrigin(0.5, 1).setScale(s).setDepth(DEPTH.clouds + near * 0.05);
+          // wrap round just out of the widest view: from M + w/2 left of the design area to M + w/2 right of it
           const w = c.f[2] * s + 80;
-          const span = W.width + w;
+          const span = W.width + M * 2 + w;
           const speed = lerp(C.cloudSpeed[0], C.cloudSpeed[1], near) * C.wind;
           const period = lerp(C.cloudBreathePeriod[0], C.cloudBreathePeriod[1], hash(i, 21));
           const phase = hash(i, 22) * TAU;
           parts.push((t) => {
-            img.x = -w / 2 + mod(x + w / 2 + speed * t, span);
+            img.x = -M - w / 2 + mod(x + M + w / 2 + speed * t, span);
             const b = Math.sin((TAU * t) / period + phase) * C.cloudBreathe;
             img.setScale(s * (1 + b), s * (1 + b * 1.6));
           });
@@ -292,7 +297,7 @@ KL.SKY_LIFE = {
         stars.forEach((st, i) => {
           const [x, y] = at(st.x, st.y);
           const base = (st.s * s) / (30 * R); // the sparkle spans 30 texture px
-          const img = scene.add.image(x, y, spark).setScale(base).setDepth(DEPTH.stars).setScrollFactor(factor, 1);
+          const img = scene.add.image(x, y, spark).setScale(base).setDepth(DEPTH.stars);
           const p1 = lerp(C.starTwinkle[0], C.starTwinkle[1], hash(i, 41)), p2 = p1 * 0.37;
           const f1 = hash(i, 42) * TAU, f2 = hash(i, 43) * TAU;
           parts.push((t) => {
@@ -305,7 +310,7 @@ KL.SKY_LIFE = {
         if (!KL.SkyLife.still) {
           // a rare shooting star, high up and quick
           const M = C.meteor;
-          const streak = scene.add.image(0, 0, meteorTexture(scene)).setOrigin(1 - 4 / 200, 0.5).setDepth(DEPTH.meteor).setScrollFactor(factor, 1).setVisible(false);
+          const streak = scene.add.image(0, 0, meteorTexture(scene)).setOrigin(1 - 4 / 200, 0.5).setDepth(DEPTH.meteor).setVisible(false);
           parts.push((t) => {
             const m = meteor(Math.floor(t / M.slot));
             const u = m ? (t - m.start) / m.duration : -1;
@@ -320,7 +325,7 @@ KL.SKY_LIFE = {
         // gulls: now and then a small flock glides across, flapping in bursts
         const B = C.birds;
         const key = birdTexture(scene);
-        const pool = Array.from({ length: B.size[1] }, () => scene.add.image(0, 0, key, 0).setDepth(DEPTH.birds).setScrollFactor(parallax ? B.factor : 1, 1).setVisible(false));
+        const pool = Array.from({ length: B.size[1] }, () => scene.add.image(0, 0, key, 0).setDepth(DEPTH.birds).setVisible(false));
         parts.push((t) => {
           const now = flockAt(t);
           pool.forEach((img, i) => {

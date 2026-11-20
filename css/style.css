@@ -53,21 +53,29 @@ html,
 body {
   margin: 0;
   padding: 0;
+  width: 100%;
   height: 100%;
   background: #0f1230;
   overflow: hidden;
+  overscroll-behavior: none; /* no pull-to-refresh / rubber-band scrolling under a swipe */
   -webkit-user-select: none;
   user-select: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
   /* tablets: no double-tap zoom, long-press callout or grey tap flash over the on-screen controls */
   touch-action: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
 }
 
+/* The game fills the whole window — under the notch and the home indicator too (viewport-fit=cover;
+ * the UI keeps to the safe area, see js/core/Viewport.js). position: fixed tracks the visible
+ * viewport on mobile browsers, where 100vh would include the hidden toolbar. */
 #game {
-  position: relative; /* the CSS effects layer (css/fx.css) is placed over the canvas inside it */
-  width: 100vw;
-  height: 100vh;
+  position: fixed; /* the CSS effects layer (css/fx.css) is placed over the canvas inside it */
+  inset: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -75,7 +83,100 @@ body {
 
 #game canvas {
   outline: none;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04);
+  display: block;
+}
+
+/* Safe-area probe: KL.View reads the device insets from its padding. */
+#kl-safe {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  visibility: hidden;
+  pointer-events: none;
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+/* Phones and tablets held upright: the game is landscape-only, so ask for a turn (KL.View sets
+ * .kl-portrait on <html> and pauses a live match). */
+#rotate {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: env(safe-area-inset-top, 0px) 24px env(safe-area-inset-bottom, 0px);
+  background: radial-gradient(120% 80% at 50% 40%, #2a3070 0%, #151a45 55%, #0b0e2a 100%);
+  color: #fff;
+  text-align: center;
+  touch-action: none;
+}
+.kl-touch.kl-portrait #rotate {
+  display: flex;
+}
+.rotate__icon {
+  width: 120px;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* a phone outline turning from portrait to landscape */
+.rotate__phone {
+  position: relative;
+  width: 46px;
+  height: 80px;
+  border: 5px solid #f5c518;
+  border-radius: 10px;
+  box-shadow: 0 5px 0 #1b1f3b, 0 0 0 4px #1b1f3b;
+  animation: kl-rotate 2.4s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.rotate__phone::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 6px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  border-radius: 50%;
+  background: #f5c518;
+}
+@keyframes kl-rotate {
+  0%,
+  20% {
+    transform: rotate(0deg);
+  }
+  50%,
+  80% {
+    transform: rotate(-90deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rotate__phone {
+    animation: none;
+    transform: rotate(-90deg);
+  }
+}
+.rotate__text {
+  margin: 0;
+  max-width: 18em;
+  font: 400 30px/1.15 'Bangers', 'Impact', sans-serif;
+  letter-spacing: 0.04em;
+  color: #f5c518;
+  -webkit-text-stroke: 1px #1b1f3b;
+  text-shadow: 0 3px 0 #1b1f3b;
+}
+:lang(hi) .rotate__text {
+  font: 700 34px/1.15 'Teko', 'Oswald', sans-serif;
+  letter-spacing: 0;
 }
 
 /* Off-screen spans force the webfonts to load before Phaser measures text. */

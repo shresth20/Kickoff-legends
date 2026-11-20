@@ -2,7 +2,7 @@
  * Every flat UI element (buttons, panels, cards, key caps, the HUD plate, meter rings) is drawn
  * in code with the same primitives CSS uses — border-radius, linear/radial gradients, inset
  * borders, glossy highlights and blurred drop shadows — straight into a canvas at the screen's real
- * pixel density (KL.RES). Unlike stretched bitmap art they stay razor sharp at any size, and each
+ * pixel density (KL.UIRES: KL.RES, times the UI scale on phones, whose UI is shown scaled up). Unlike stretched bitmap art they stay razor sharp at any size, and each
  * variant is painted once per session and cached as a texture (keys start with "kl:").
  *
  * Painters return a "spec" { key, ox, oy } — the texture plus the origin that puts the element's
@@ -75,7 +75,7 @@ window.KL = window.KL || {};
   function paint(scene, key, w, h, draw) {
     const tm = scene.textures;
     if (tm.exists(key)) return key;
-    const R = KL.RES;
+    const R = KL.UIRES;
     const canvas = document.createElement('canvas');
     canvas.width = Math.ceil(w * R);
     canvas.height = Math.ceil(h * R);
@@ -87,7 +87,7 @@ window.KL = window.KL || {};
   }
 
   /** Add a painted spec as an image whose (x, y) is the element's face centre. */
-  const place = (scene, x, y, spec) => scene.add.image(x, y, spec.key).setOrigin(spec.ox, spec.oy).setScale(1 / KL.RES);
+  const place = (scene, x, y, spec) => scene.add.image(x, y, spec.key).setOrigin(spec.ox, spec.oy).setScale(1 / KL.UIRES);
 
   /* --------------------------------------------------------------- button */
   const BTN_M = 10; // room for the focus ring and drop shadow
@@ -336,5 +336,44 @@ window.KL = window.KL || {};
     return { key, ox: 0.5, oy: 0.5 };
   }
 
-  KL.Paint = { C, rr, vgrad, tint, circle, stud, gloss, paint, place, button, panel, card, keycap, ring, glow };
+  /**
+   * Full-screen glyph in the style of the ui_icons art (white, thick ink outline, hard ink drop),
+   * `size` px across: four corner brackets pointing out (enter) or in (exit).
+   */
+  function fullscreenIcon(scene, size, exit) {
+    const M = Math.ceil(size * 0.16), S = size + M * 2;
+    const key = paint(scene, `kl:icon:fullscreen:${size}:${exit ? 1 : 0}`, S, S, (ctx) => {
+      ctx.translate(S / 2, S / 2 - size * 0.03);
+      const t = size * 0.17, ink = size * 0.085, drop = size * 0.07;
+      const h = size / 2 - t / 2 - ink;
+      const a = exit ? h * 0.24 : h, arm = h * 0.62;
+      const brackets = () => {
+        ctx.beginPath();
+        for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+          const cx = sx * a, cy = sy * a, d = exit ? 1 : -1; // arms run out from the corner (exit) or in (enter)
+          ctx.moveTo(cx, cy + d * sy * arm);
+          ctx.lineTo(cx, cy);
+          ctx.lineTo(cx + d * sx * arm, cy);
+        }
+      };
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = C.ink;
+      ctx.lineWidth = t + ink * 2;
+      ctx.save();
+      ctx.translate(0, drop);
+      brackets();
+      ctx.stroke();
+      ctx.restore();
+      brackets();
+      ctx.stroke();
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = t;
+      brackets();
+      ctx.stroke();
+    });
+    return { key, ox: 0.5, oy: 0.5 };
+  }
+
+  KL.Paint = { C, rr, vgrad, tint, circle, stud, gloss, paint, place, button, panel, card, keycap, ring, glow, fullscreenIcon };
 })();

@@ -1,7 +1,10 @@
 /* The ball.
  *
- * Physics: an Arcade circle body with manual drag so it settles in ~3 bounces. The physics sprite
- * itself is drawn fully transparent (it stays `visible`, so its ground shadow keeps following it).
+ * Physics: an Arcade circle body (gravity, bounces off the turf, posts, bar and walls); after every fixed
+ * physics step js/systems/BallPhysics.js adds what Arcade doesn't know — air drag, the swerve of its spin
+ * (topspin dips a drive, backspin floats a long ball), rolling resistance and the skid of each bounce.
+ * The spin (`omega`) is that physical spin, and the rig below shows it. The physics sprite itself is
+ * drawn fully transparent (it stays `visible`, so its ground shadow keeps following it).
  *
  * Look: a rig synced just before every render — after the physics step, so it never trails a frame:
  *  - `visual`, a container turned to the axis of the last impact and squashed along it; inside it the
@@ -10,9 +13,9 @@
  *  - `ghosts`, faint after-images on hard shots.
  * Every impact — boot, turf, post, crossbar, head, chest, wall — is read from the change in velocity
  * between two rendered frames, so the ball squashes by how hard it was hit and springs back round
- * through a slight stretch, like a real air-filled ball. During a kick's hit-stop the squash holds,
- * so the ball is seen pressed against the boot. Spin is physical: on the turf the ball rolls at its
- * ground speed, a chip carries backspin, a drive topspin. Feel numbers: KL.TUNING.motion.ball. */
+ * through a slight stretch, like a real air-filled ball. A kick's hit-stop slows the world right down
+ * for a moment, so the ball is seen pressed against the boot before it springs away. On the turf it rolls at its ground speed; a long kick
+ * carries backspin, a straight kick topspin. Feel numbers: KL.TUNING.motion.ball. */
 window.KL = window.KL || {};
 
 KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
@@ -25,6 +28,8 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     this.superMode = false;
     this.lastKicker = null;
     this.lastTouchKind = null;
+    this.lastKickAt = -1e9;
+    this.passKicker = null; // { index, until }: just struck, it leaves through that player's body
     this.trail = null;
     this.setDisplaySize(T.radius * 2, T.radius * 2);
     this.body.setCircle(this.width / 2);
@@ -34,7 +39,7 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     this.setAlpha(0); // the rig below draws the ball
 
     if (!scene.anims.exists('ball_super')) {
-      scene.anims.create({ key: 'ball_super', frames: scene.anims.generateFrameNames('props', { prefix: 'ball_super/', start: 0, end: 5, zeroPad: 2 }), frameRate: 14, repeat: -1 });
+      scene.anims.create({ key: 'ball_super', frames: scene.anims.generateFrameNames('props', { prefix: 'ball_super/', start: 0, end: 5, zeroPad: 2 }), frameRate: 14 * KL.animPace(), repeat: -1 });
     }
 
     // ---- rig ----
@@ -53,7 +58,8 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     this.contactX = 0; // unit vector pointing away from the last contact point
     this.contactY = 0;
     this.spin = 0; // world rotation of the panels
-    this.omega = 0; // rad/s
+    this.omega = 0; // rad/s, physical (KL.BallPhysics): + clockwise on screen
+    this.phys = { vx: 0, vy: 0, omega: 0 }; // scratch state handed to KL.BallPhysics.step
     this.heading = 0; // smoothed flight angle of the fireball
     this.prevVx = 0;
     this.prevVy = 0;
@@ -61,7 +67,39 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     this.rigClock = 0; // game-time ms (stops in hit-stop, slows in slow-mo)
 
     scene.events.on(Phaser.Scenes.Events.PRE_RENDER, this.syncRig, this);
-    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => scene.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncRig, this));
+    scene.physics.world.on('worldstep', this.physicsStep, this);
+    scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.unhook(scene));
+  }
+
+  unhook(scene) {
+    scene.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncRig, this);
+    scene.physics?.world?.off('worldstep', this.physicsStep, this);
+  }
+
+  /**
+   * After every fixed physics step (dt = that step's game time): air or turf, from what Arcade just did.
+   * blocked.down = it touched the turf (or the top of a crossbar) this step; bouncing up off it faster than
+   * a settle means it landed.
+   */
+  physicsStep(dt) {
+    const b = this.body;
+    if (!b?.enable) return;
+    const T = KL.TUNING.ball;
+    const v = b.velocity;
+    const contact = !b.blocked.down ? 'air' : v.y < -T.turf.bounceMinVy * T.bounce ? 'bounce' : 'roll';
+    const s = this.phys;
+    s.vx = v.x;
+    s.vy = v.y;
+    s.omega = this.omega;
+    KL.BallPhysics.step(s, dt, contact, T, this.visR, this.superMode);
+    v.x = s.vx;
+    v.y = s.vy;
+    this.omega = s.omega;
+  }
+
+  /** Just struck by player `i`: the ball is still leaving through their body. */
+  passesThrough(i) {
+    return this.passKicker !== null && this.passKicker.index === i && this.scene.time.now < this.passKicker.until;
   }
 
   get isSuper() {
@@ -76,6 +114,7 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     this.lastKicker = null;
     this.lastTouchKind = null;
     this.lastKickAt = -1e9;
+    this.passKicker = null;
     // a placed ball is round, still and has no history to smear
     this.deform.reset();
     this.spin = 0;
@@ -85,38 +124,38 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     this.history.length = 0;
   }
 
-  /** dir: +1 rightwards / -1 leftwards. kind: low | high | header | super */
-  kick(dir, speed, angleDeg, carryVx, kicker, kind) {
+  /**
+   * A boot or a head strikes the ball. shot = { vx, vy, omega } from KL.BallPhysics.launch; kind: low |
+   * high | header | super. Returns the kind that happened: 'clash' when the other player struck the same
+   * touch a moment ago — then it squirts straight up instead of the second kick silently winning.
+   */
+  kick(shot, kicker, kind) {
     const now = this.scene.time.now;
     const v = this.body.velocity;
     const bx = v.x, by = v.y;
-    const clash = kind !== 'super' && this.lastKicker !== null && this.lastKicker !== kicker && now - (this.lastKickAt ?? -1e9) < KL.TUNING.clashMs && this.lastTouchKind !== 'super';
+    const clash = kind !== 'super' && this.lastKicker !== null && this.lastKicker !== kicker && now - this.lastKickAt < KL.TUNING.clashMs && this.lastTouchKind !== 'super';
     this.lastKickAt = now;
+    this.lastKicker = kicker;
+    this.passKicker = { index: kicker, until: now + KL.TUNING.player.kickerPassMs };
     if (clash) {
-      // both players struck it together: it squirts straight up instead of the second kick silently winning
       this.body.setVelocity(v.x * 0.1, -KL.TUNING.ball.clashPop);
-      this.lastKicker = kicker;
       this.lastTouchKind = 'clash';
-      this.struck(bx, by, 'clash', dir);
+      this.struck(bx, by, 'clash');
+      this.omega = (Math.random() < 0.5 ? -1 : 1) * KL.TUNING.ball.clashSpin;
       return 'clash';
     }
-    const a = Phaser.Math.DegToRad(angleDeg);
-    this.body.setVelocity(Math.cos(a) * speed * dir + carryVx, -Math.sin(a) * speed);
-    this.lastKicker = kicker;
+    this.body.setVelocity(shot.vx, shot.vy);
     this.lastTouchKind = kind;
     if (kind === 'super') this.setSuper(true);
-    this.struck(bx, by, kind, dir);
+    this.struck(bx, by, kind);
+    this.omega = shot.omega; // after struck(): the squash of its own strike mustn't scrub the spin it gives
+    return kind;
   }
 
-  /** A boot or a head met the ball: squash it against the contact and give it the strike's spin. */
-  struck(bx, by, kind, dir) {
-    const S = KL.TUNING.motion.ball.kickSpin;
+  /** A boot or a head met the ball: squash it against the contact, harder the harder the strike. */
+  struck(bx, by, kind) {
     const v = this.body.velocity;
-    this.impact(v.x - bx, v.y - by, kind === 'super' ? 1.25 : 1.1);
-    if (kind === 'low') this.omega = dir * (Math.abs(v.x) / this.visR) * S.low; // driven: rolls forward
-    else if (kind === 'high') this.omega = dir * S.high; // chipped: backspin
-    else if (kind === 'header') this.omega = dir * S.header;
-    else if (kind === 'clash') this.omega = (Math.random() < 0.5 ? -1 : 1) * S.clash;
+    this.impact(v.x - bx, v.y - by, kind === 'super' ? 1.25 : kind === 'header' ? 1 : 1.15);
     // already squashed for this one: the impact detector must not count it again
     this.prevVx = v.x;
     this.prevVy = v.y;
@@ -195,16 +234,8 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
 
   preUpdate(time, delta) {
     super.preUpdate(time, delta);
-    const world = this.scene.physics.world;
-    if (world.isPaused) return; // hit-stop / pause menu: the ball must not lose speed while frozen
-    const T = KL.TUNING.ball;
-    const v = this.body.velocity;
-    const onFloor = this.body.blocked.down;
-    const k = Math.pow(onFloor ? T.groundDrag : T.airDrag, delta / world.timeScale / (1000 / 60));
-    v.x *= k;
-    if (!onFloor) v.y *= k;
-    if (onFloor && Math.abs(v.x) < 6) v.x = 0;
-    if (this.superMode && v.length() < 250) this.setSuper(false);
+    // (drag, spin and turf act per physics step: physicsStep, so a hit-stop or the pause menu costs no pace)
+    if (this.superMode && this.body.velocity.length() < 250) this.setSuper(false); // the fireball burns out
   }
 
   /** Runs on the scene's PRE_RENDER: physics has stepped, so this is where the ball really is. */
@@ -212,13 +243,10 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     if (!this.body || !this.scene) return;
     const M = KL.TUNING.motion.ball;
     const world = this.scene.physics.world;
-    const dt = world.isPaused ? 0 : Math.min(this.scene.game.loop.delta, 50) / 1000 / world.timeScale;
+    const dt = world.isPaused ? 0 : (Math.min(this.scene.game.loop.delta, 50) / 1000) * (this.scene.speed ?? 1);
     const v = this.body.velocity;
 
     if (dt > 0) {
-      if (this.body.blocked.down) this.omega = KL.Motion.damp(this.omega, v.x / this.visR, M.grip, dt);
-      else this.omega *= Math.exp(-M.airSpinDecay * dt);
-      this.omega = Phaser.Math.Clamp(this.omega, -M.maxSpin, M.maxSpin);
       this.spin = (this.spin + this.omega * dt) % (Math.PI * 2);
       this.deform.step(dt);
       this.rigClock += dt * 1000;
@@ -281,7 +309,7 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
   }
 
   destroy(fromScene) {
-    this.scene?.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncRig, this);
+    if (this.scene) this.unhook(this.scene);
     this.trail?.destroy();
     this.visual?.destroy();
     this.ghosts?.forEach((g) => g.destroy());

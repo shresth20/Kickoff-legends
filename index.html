@@ -2,15 +2,31 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <!-- viewport-fit=cover: draw under the notch / home indicator (the UI keeps to the safe area) -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Kickoff Legends</title>
   <meta name="description" content="Kickoff Legends — cel-shaded 1v1 street football. Play vs AI or a friend on one keyboard. Runs fully offline." />
+  <meta name="theme-color" content="#0f1230" />
+  <meta name="color-scheme" content="dark" />
+  <meta name="format-detection" content="telephone=no" />
+  <!-- added to the home screen it runs as a full-screen app (iPhone has no Fullscreen API for pages) -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Kickoff Legends" />
+  <link rel="manifest" href="manifest.webmanifest" />
   <link rel="icon" type="image/png" href="assets/images/favicon.png" />
+  <link rel="apple-touch-icon" href="assets/images/icons/icon-180.png" />
   <link rel="stylesheet" href="css/style.css" />
   <link rel="stylesheet" href="css/fx.css" />
 </head>
 <body>
   <div id="game"><noscript id="nojs">Kickoff Legends needs JavaScript to run.</noscript></div>
+  <!-- phones / tablets held upright: the game plays in landscape (shown by css/style.css) -->
+  <div id="rotate" role="alert">
+    <div class="rotate__icon" aria-hidden="true"><div class="rotate__phone"></div></div>
+    <p class="rotate__text">Rotate your device</p>
+  </div>
   <span class="font-preload" style="font-family: 'Bangers'">.</span>
   <span class="font-preload" style="font-family: 'Oswald'; font-weight: 700">.</span>
   <span class="font-preload" style="font-family: 'Teko'; font-weight: 600">.क</span>
@@ -31,6 +47,7 @@
   <!-- core services -->
   <script src="js/core/I18n.js"></script>
   <script src="js/core/EventBus.js"></script>
+  <script src="js/core/Viewport.js"></script>
   <script src="js/core/HiDPI.js"></script>
   <script src="js/core/Motion.js"></script>
   <script src="js/core/SaveService.js"></script>
@@ -40,6 +57,7 @@
   <script src="js/core/FX.js"></script>
 
   <!-- entities + systems -->
+  <script src="js/systems/BallPhysics.js"></script>
   <script src="js/entities/Ball.js"></script>
   <script src="js/entities/Player.js"></script>
   <script src="js/entities/Goal.js"></script>

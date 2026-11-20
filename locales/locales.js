@@ -3,11 +3,14 @@ window.LOCALES = {
   "en": {
     "app_title": "Kickoff Legends",
     "press_any_key": "Press any key",
+    "tap_to_start": "Tap to play",
     "loading": "Loading",
     "tip_1": "Hold Sprint to close the gap, release before you kick.",
-    "tip_2": "A high kick lobs the ball over your rival's head.",
+    "tip_2": "The long kick (K) launches the ball high and far: over your rival, or over their keeper from your own half.",
     "tip_3": "Conceding a goal charges your Super Skill faster.",
-    "tip_4": "Jump into the ball and press High Kick to head it.",
+    "tip_4": "Jump into the ball and press K to head it.",
+    "tip_touch_1": "Hold an arrow with one thumb and kick with the other.",
+    "tip_touch_2": "Jump into the ball and tap the long kick to head it.",
     "menu_play": "Play",
     "menu_settings": "Settings",
     "menu_credits": "Credits",
@@ -51,16 +54,22 @@ window.LOCALES = {
     "credits_title": "Credits",
     "credits_body": "Kickoff Legends v2\nDesign, art direction and code: Shresth Kasera\nCharacter and UI art generated with ChatGPT in a cel-shaded anime style\nEngine: Phaser 3\nFonts: Bangers, Oswald and Teko (SIL Open Font License)\n\nThanks for playing!",
     "credits_hint": "Press any key to return",
-    "controls_hint_p1": "P1  A/D move · L jump · J/K kick · I super · Shift sprint"
+    "credits_hint_touch": "Tap to return",
+    "controls_hint_p1": "P1  A/D move · L jump · J/K kick · I super · Shift sprint",
+    "rotate_device": "Rotate your device to play",
+    "fullscreen_hint_ios": "For full screen: Share → Add to Home Screen"
   },
   "hi": {
     "app_title": "किकऑफ़ लेजेंड्स",
     "press_any_key": "कोई भी कुंजी दबाएँ",
+    "tap_to_start": "खेलने के लिए टैप करें",
     "loading": "लोड हो रहा है",
     "tip_1": "दूरी कम करने के लिए स्प्रिंट दबाए रखें, किक से पहले छोड़ दें।",
-    "tip_2": "हाई किक गेंद को प्रतिद्वंद्वी के सिर के ऊपर से लॉब करती है।",
+    "tip_2": "लॉन्ग किक (K) गेंद को ऊँचा और दूर भेजती है: प्रतिद्वंद्वी के ऊपर से, या अपने हाफ़ से उनके गोलकीपर के ऊपर से।",
     "tip_3": "गोल खाने पर आपका सुपर स्किल तेज़ी से चार्ज होता है।",
-    "tip_4": "गेंद की ओर कूदें और हेडर के लिए हाई किक दबाएँ।",
+    "tip_4": "गेंद की ओर कूदें और हेडर के लिए K दबाएँ।",
+    "tip_touch_1": "एक अंगूठे से तीर दबाए रखें और दूसरे से किक मारें।",
+    "tip_touch_2": "गेंद की ओर कूदें और हेडर के लिए लंबी किक पर टैप करें।",
     "menu_play": "खेलें",
     "menu_settings": "सेटिंग्स",
     "menu_credits": "क्रेडिट्स",
@@ -104,6 +113,9 @@ window.LOCALES = {
     "credits_title": "क्रेडिट्स",
     "credits_body": "किकऑफ़ लेजेंड्स v2\nडिज़ाइन, आर्ट डायरेक्शन और कोड: श्रेष्ठ कसेरा\nकिरदार और UI आर्ट ChatGPT से सेल-शेडेड ऐनिमे शैली में बनाई गई\nइंजन: Phaser 3\nफ़ॉन्ट: Bangers, Oswald और Teko (SIL Open Font License)\n\nखेलने के लिए धन्यवाद!",
     "credits_hint": "वापस जाने के लिए कोई कुंजी दबाएँ",
-    "controls_hint_p1": "P1  A/D चलें · L कूद · J/K किक · I सुपर · Shift स्प्रिंट"
+    "credits_hint_touch": "वापस जाने के लिए टैप करें",
+    "controls_hint_p1": "P1  A/D चलें · L कूद · J/K किक · I सुपर · Shift स्प्रिंट",
+    "rotate_device": "खेलने के लिए अपना डिवाइस घुमाएँ",
+    "fullscreen_hint_ios": "फ़ुल स्क्रीन के लिए: शेयर → होम स्क्रीन में जोड़ें"
   }
 };

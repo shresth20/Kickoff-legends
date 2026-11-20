@@ -1,6 +1,7 @@
 /* On-screen controller, laid out like a mobile head-football pad: two round arrow buttons
- * bottom-left (move), slanted kick / kick-high / jump buttons bottom-right, a round Super
- * button wearing its charge ring, and a small sprint button.
+ * bottom-left (move); bottom-right, in key order I · J · K · L, the round fire Super button
+ * wearing its charge ring, then the slanted kick / kick-high / jump buttons. Sprint has no
+ * button (hold its key).
  *
  * Every button prints the player's key and lights up while that key
  * is held, so keyboard players see the controls working. On a tablet the same buttons are
@@ -9,23 +10,33 @@
  * KL.VirtualPad, which KeyboardInput merges with the keys.
  *
  * The buttons sit on the grass in front of the players (below groundY), so they never cover
- * the players or a ball on the ground. Faces are painted in code (KL.Paint) at device resolution
- * and cached per label / size / state. */
+ * the players or a ball on the ground. Like a native game's pad, each hand's cluster keeps to its
+ * corner of the screen (inside the safe area) on any screen shape, and on a phone the whole pad is
+ * scaled up to thumb size (KL.View.ui). On touch screens the faces drop the key names (icons only).
+ * Faces are painted in code (KL.Paint) at device resolution and cached per label / size / state. */
 window.KL = window.KL || {};
 
-/** Button positions in logical px (centre). r: round buttons · w×h: slanted buttons. */
+/**
+ * Button positions and sizes in logical px at UI scale 1 (desktop, tablet). anchor: the screen side
+ * the button keeps to · dx: px in from that side's safe edge to its centre · dy: px up from the
+ * bottom safe edge. A phone multiplies both, and the sizes, by its UI scale. r: round buttons ·
+ * w×h: slanted buttons. On a 1280×720 view this is the original layout (x 100 … 1164, y ≈ 664).
+ */
 KL.PAD_LAYOUT = {
-  version: 1, // bump after changing a painter below so cached textures repaint
+  version: 3, // bump after changing a painter below so cached textures repaint
   // one full-size controller for Player 1
   solo: [
-    { action: 'left', look: 'move', x: 100, y: 664, r: 46 },
-    { action: 'right', look: 'move', x: 232, y: 664, r: 46 },
-    { action: 'sprint', look: 'sprint', x: 566, y: 672, r: 30 },
-    { action: 'kickLow', look: 'kick', x: 704, y: 666, w: 148, h: 70 },
-    { action: 'kickHigh', look: 'kick', x: 868, y: 666, w: 148, h: 70 },
-    { action: 'jump', look: 'kick', x: 1032, y: 666, w: 148, h: 70 },
-    { action: 'super', look: 'super', x: 1196, y: 662, r: 40 },
+    { action: 'left', look: 'move', anchor: 'left', dx: 100, dy: 56, r: 46 },
+    { action: 'right', look: 'move', anchor: 'left', dx: 232, dy: 56, r: 46 },
+    // right hand, in key order I · J · K · L: Super, straight kick, long kick, jump
+    { action: 'super', look: 'super', anchor: 'right', dx: 604, dy: 58, r: 42 },
+    { action: 'kickLow', look: 'kick', anchor: 'right', dx: 444, dy: 54, w: 148, h: 70 },
+    { action: 'kickHigh', look: 'kick', anchor: 'right', dx: 280, dy: 54, w: 148, h: 70 },
+    { action: 'jump', look: 'kick', anchor: 'right', dx: 116, dy: 54, w: 148, h: 70 },
   ],
+  // the width both clusters need side by side (outer margins + a thumb's gap between them): on a
+  // narrow screen the pad scale is capped so the hands never meet
+  span: 1000,
   skew: 0.28, // slant of the kick buttons: top edge shifted by skew × h
   meter: { gap: 9, width: 7 }, // super charge ring outside the button
   flashMs: 110, // a quick tap keeps its button lit at least this long
@@ -199,7 +210,39 @@ KL.PAD_LAYOUT = {
     ctx.restore();
   }
 
-  /** Translucent round socket (outer ring + inner disc), the base of the move and sprint buttons. */
+  /** Stylised fire for the Super button: tongues as [centre x, bottom radius, tip lean] in units of the
+   * half-width w, then [tip height, foot lift] in units of h. The wide middle tongue's bowl is the
+   * fire's foot; the side tongues start higher up, inside it, so the bottom stays one smooth curve. */
+  const FIRE = [
+    [0, 0.74, 0.1, 1, 0],
+    [-0.52, 0.34, -0.26, 0.66, 0.1],
+    [0.54, 0.3, 0.24, 0.58, 0.12],
+  ];
+  /** One tongue: round bottom, sides sweeping in to a pointed, leaning tip. */
+  function tongue(ctx, cx, rb, lean, ht, lift) {
+    const cy = -lift - rb, tx = cx + lean, ty = -ht, rise = ht - lift - rb;
+    ctx.beginPath();
+    ctx.moveTo(cx + rb, cy);
+    ctx.arc(cx, cy, rb, 0, Math.PI); // clockwise from the right, through the bottom
+    ctx.bezierCurveTo(cx - rb, cy - rise * 0.5, tx - rb * 0.3, ty + rise * 0.3, tx, ty);
+    ctx.bezierCurveTo(tx + rb * 0.45, ty + rise * 0.35, cx + rb, cy - rise * 0.45, cx + rb, cy);
+    ctx.closePath();
+  }
+  /** Fire of half-width w and height h on (0, 0), filled top → bottom with `stops`. Every tongue is
+   * stroked before any is filled, so only the outline around the whole fire stays inked. */
+  function fire(ctx, w, h, stops, ink, tongues = FIRE) {
+    const path = (t) => tongue(ctx, t[0] * w, t[1] * w, t[2] * w, t[3] * h, t[4] * h);
+    if (ink) {
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = ink * 2;
+      ctx.strokeStyle = INK;
+      for (const t of tongues) (path(t), ctx.stroke());
+    }
+    ctx.fillStyle = P().vgrad(ctx, -h, 0, stops);
+    for (const t of tongues) (path(t), ctx.fill());
+  }
+
+  /** Translucent round socket (outer ring + inner disc), the base of the move buttons. */
   function socket(ctx, r, ri, lit) {
     const C = P().circle;
     C(ctx, 0, 0, r);
@@ -234,35 +277,7 @@ KL.PAD_LAYOUT = {
       ctx.scale(b.arrow, 1);
       gold(ctx, arrowPath(ctx, -ri * 1.0, ri * 1.2, ri * 0.84, ri * 0.44, ri * 1.08), -ri * 0.84, ri * 0.84, Math.max(2, r * 0.06));
       ctx.restore();
-      if (!/^[←→]$/.test(b.label)) keyText(ctx, b.label, b.arrow * ri * 0.02, 0, Math.round(r * 0.98), ri * 1.6);
-    });
-    return { key, ox: 0.5, oy: 0.5 };
-  }
-
-  /** Small round sprint button: gold speed chevrons behind the key. */
-  function sprintLook(scene, b, lit) {
-    const r = b.r, S = r + 6;
-    const key = P().paint(scene, `kl:pad:sprint:${v()}:${b.dir}:${b.label}:${r}:${lit}`, S * 2, S * 2, (ctx) => {
-      ctx.translate(S, S);
-      socket(ctx, r, r * 0.8, lit);
-      ctx.save();
-      ctx.scale(b.dir, 1);
-      ctx.globalAlpha = 0.95;
-      for (const cx of [-r * 0.2, r * 0.22]) {
-        const w = r * 0.3, h = r * 0.46, t = r * 0.16;
-        gold(ctx, () => {
-          ctx.beginPath();
-          ctx.moveTo(cx - w, -h);
-          ctx.lineTo(cx - w + t, -h);
-          ctx.lineTo(cx + w * 0.9, 0);
-          ctx.lineTo(cx - w + t, h);
-          ctx.lineTo(cx - w, h);
-          ctx.lineTo(cx + w * 0.9 - t, 0);
-          ctx.closePath();
-        }, -h, h, Math.max(1.5, r * 0.05));
-      }
-      ctx.restore();
-      keyText(ctx, b.label, 0, r * 0.02, Math.round(r * (b.label.length > 2 ? 0.5 : 0.8)), r * 1.5);
+      if (b.label && !/^[←→]$/.test(b.label)) keyText(ctx, b.label, b.arrow * ri * 0.02, 0, Math.round(r * 0.98), ri * 1.6);
     });
     return { key, ox: 0.5, oy: 0.5 };
   }
@@ -318,7 +333,8 @@ KL.PAD_LAYOUT = {
       // icon: the boot says "kick", the gold arrow says which kick (or the jump). Both sit either
       // side of the key, pushed out by its width and shrunk to the room left (wide keys like N1).
       const d = b.dir, labelPx = Math.round(h * 0.68), labelMax = w * 0.46;
-      const half = fitKey(ctx, b.label, labelPx, labelMax).w / 2;
+      // no key printed (touch screens): boot and arrow close up around the middle
+      const half = b.label ? fitKey(ctx, b.label, labelPx, labelMax).w / 2 : h * 0.06;
       const room = w / 2 - half - 2; // free width on each side of the key
       const bootS = Math.min((h / 72) * 0.97, (room + 10) / 64); // the heel may tuck 10 px under the key
       const bootX = half + (64 * bootS) / 2 - 10;
@@ -343,17 +359,19 @@ KL.PAD_LAYOUT = {
         boot(ctx, bootX * d, -h * 0.08, bootS * 0.96, d);
         arrow(-1, -h * 0.02, h * 0.56, -Math.PI / 2);
       }
-      keyText(ctx, b.label, 0, h * 0.08, labelPx, labelMax);
+      if (b.label) keyText(ctx, b.label, 0, h * 0.08, labelPx, labelMax);
       ctx.restore();
     });
     return { key, ox: 0.5, oy: (M + h / 2) / th };
   }
 
-  /** Round Super button: bronze disc, burst emblem, key on top, charge track around it. */
+  /** Round Super button, the base layer: charge track, then a dark ember disc with a hot rim and a
+   * glow where the fire stands. The fire (superFire) and the key (superKey) are layered on top, so
+   * the flames can flicker while the key holds still. */
   function superLook(scene, b, lit) {
     const L = KL.PAD_LAYOUT;
     const r = b.r, ring = r + L.meter.gap, S = ring + L.meter.width / 2 + 5;
-    const key = P().paint(scene, `kl:pad:super:${v()}:${b.label}:${r}:${lit}`, S * 2, S * 2, (ctx) => {
+    const key = P().paint(scene, `kl:pad:super:${v()}:${r}:${lit}`, S * 2, S * 2, (ctx) => {
       ctx.translate(S, S);
       const C = P().circle;
       // charge track
@@ -374,38 +392,79 @@ KL.PAD_LAYOUT = {
       ctx.fillStyle = INK;
       ctx.fill();
       ctx.restore();
-      const g = ctx.createRadialGradient(-r * 0.3, -r * 0.4, r * 0.1, 0, 0, r);
-      g.addColorStop(0, lit ? '#F2A050' : '#B7652C');
-      g.addColorStop(0.55, lit ? '#B25A1E' : '#6E3214');
-      g.addColorStop(1, lit ? '#6A2C0C' : '#341306');
+      const g = ctx.createRadialGradient(0, r * 0.45, r * 0.1, 0, 0, r * 1.05);
+      g.addColorStop(0, lit ? '#E0560F' : '#9A2A08');
+      g.addColorStop(0.5, lit ? '#8E2507' : '#561204');
+      g.addColorStop(1, lit ? '#3E0C03' : '#230602');
       C(ctx, 0, 0, r);
       ctx.fillStyle = g;
       ctx.fill();
+      // heat: a soft orange bloom behind the fire's foot
+      const heat = ctx.createRadialGradient(0, r * 0.4, 0, 0, r * 0.4, r * 0.85);
+      heat.addColorStop(0, lit ? 'rgba(255,200,80,0.75)' : 'rgba(255,130,30,0.55)');
+      heat.addColorStop(1, 'rgba(255,90,20,0)');
+      C(ctx, 0, 0, r - 1);
+      ctx.fillStyle = heat;
+      ctx.fill();
+      // hot rim: an orange → gold ring, brighter at the top
       C(ctx, 0, 0, r - 2.5);
-      ctx.lineWidth = 2.5;
-      ctx.strokeStyle = lit ? '#FFF2A0' : '#E8A93A';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = P().vgrad(ctx, -r, r, lit ? ['#FFF6B0', '#FFC845', '#FF8A1F'] : ['#FFD25A', '#FF8A1F', '#C2380E']);
       ctx.stroke();
-      // burst emblem: three up arrows fanning out, engraved
-      ctx.save();
-      ctx.globalAlpha = 0.5;
-      for (const [ax, ang, len] of [[-r * 0.42, -Math.PI / 2 - 0.5, r * 0.62], [r * 0.42, -Math.PI / 2 + 0.5, r * 0.62], [0, -Math.PI / 2, r * 0.9]]) {
-        goldArrow(ctx, ax, r * 0.05, len, r * 0.17, ang);
-      }
-      ctx.restore();
       ctx.save(); // gloss
-      C(ctx, 0, 0, r - 3);
+      C(ctx, 0, 0, r - 4);
       ctx.clip();
-      ctx.fillStyle = 'rgba(255,255,255,0.16)';
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
       ctx.beginPath();
-      ctx.ellipse(0, -r * 0.55, r * 0.8, r * 0.42, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, -r * 0.62, r * 0.78, r * 0.36, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      keyText(ctx, b.label, 0, 0, Math.round(r * 1.05), r * 1.45);
     });
     return { key, ox: 0.5, oy: 0.5 };
   }
 
-  const LOOKS = { move: moveLook, sprint: sprintLook, kick: kickLook, super: superLook };
+  /** The Super button's fire, origin at its foot (so it flickers upwards): red-orange outer flames, an
+   * orange-yellow heart, a white-hot core and a few sparks. Stays inside the charge ring. */
+  function superFire(scene, b) {
+    const r = b.r, w = r * 0.72, h = r * 1.52, M = 6;
+    const tw = w * 2 + M * 2, th = h + M * 2;
+    const key = P().paint(scene, `kl:pad:fire:${v()}:${r}`, tw, th, (ctx) => {
+      ctx.translate(tw / 2, h + M);
+      fire(ctx, w, h, ['#FF3D1F', '#FF6A1F', '#FF9A26'], Math.max(2, r * 0.055));
+      fire(ctx, w * 0.64, h * 0.7, ['#FFA51F', '#FFC93C', '#FFE45C'], 0, FIRE.slice(0, 2));
+      ctx.save(); // the white-hot core floats up behind the key instead of pooling under it
+      ctx.translate(0, -h * 0.1);
+      fire(ctx, w * 0.36, h * 0.42, ['#FFFFFF', '#FFF3B0'], 0, FIRE.slice(0, 1));
+      ctx.restore();
+      // sparks drifting up off the tongues
+      ctx.fillStyle = '#FFE45C';
+      ctx.strokeStyle = INK;
+      ctx.lineWidth = 1.5;
+      for (const [sx, sy, s] of [[-w * 0.86, -h * 0.82, 2.6], [w * 0.8, -h * 0.74, 2.2], [w * 0.5, -h * 0.98, 1.8]]) {
+        ctx.beginPath();
+        ctx.moveTo(sx, sy - s * 1.5);
+        ctx.lineTo(sx + s, sy);
+        ctx.lineTo(sx, sy + s * 1.5);
+        ctx.lineTo(sx - s, sy);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.fill();
+      }
+    });
+    return { key, ox: 0.5, oy: (h + M) / th, y: r * 0.66 };
+  }
+
+  /** The Super button's key, printed over the fire's white-hot heart. */
+  function superKey(scene, b) {
+    const r = b.r, S = r;
+    const key = P().paint(scene, `kl:pad:superkey:${v()}:${b.label}:${r}`, S * 2, S * 2, (ctx) => {
+      ctx.translate(S, S);
+      if (b.label) keyText(ctx, b.label, 0, r * 0.2, Math.round(r * 0.9), r * 1.3);
+    });
+    return { key, ox: 0.5, oy: 0.5 };
+  }
+
+  const LOOKS = { move: moveLook, kick: kickLook, super: superLook };
 
   /* ----------------------------------------------------------- controller */
   KL.TouchControls = class TouchControls {
@@ -419,13 +478,16 @@ KL.PAD_LAYOUT = {
       this.pads = pads;
       this.isLive = isLive;
       const keys = KL.Save.settings.controls.p1;
+      // keyboard players read their keys off the buttons; a touch screen shows icons only
+      const label = (action) => (KL.View.touch ? '' : KL.keyLabel(keys[action]));
       this.buttons = KL.PAD_LAYOUT.solo.map((spec) =>
-        this.build({ ...spec, player: 0, dir: 1, label: KL.keyLabel(keys[spec.action]), arrow: spec.action === 'left' ? -1 : 1 }),
+        this.build({ ...spec, player: 0, dir: 1, label: label(spec.action), arrow: spec.action === 'left' ? -1 : 1 }),
       );
 
       // pointer id → button under it. Recomputed on every down / move / up, so sliding a finger
-      // from ← to → (or from sprint onto a kick) switches buttons without lifting it.
+      // from ← to → (or from one kick onto the next) switches buttons without lifting it.
       this.owners = new Map();
+      this.layout(KL.View); // the HUD re-runs it when the view changes
       const input = scene.input;
       this.onPointer = (p) => this.track(p);
       this.onUp = (p) => this.release(p);
@@ -438,10 +500,29 @@ KL.PAD_LAYOUT = {
       scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.destroy());
     }
 
+    /**
+     * Place the pad on the view (KL.View): each cluster in its bottom corner, inside the safe area,
+     * scaled to the UI scale (capped so both hands fit side by side). Re-run when the view changes.
+     */
+    layout(V) {
+      const L = KL.PAD_LAYOUT;
+      const k = Math.min(V.ui, (V.right - V.left) / L.span);
+      for (const b of this.buttons) {
+        b.s = k;
+        b.x = b.anchor === 'left' ? V.left + b.dx * k : V.right - b.dx * k;
+        b.y = V.bottom - b.dy * k;
+        b.root.setPosition(b.x, b.y);
+        this.scene.tweens.killTweensOf(b.root);
+        b.root.setScale(k);
+        if (b.ready) this.pulse(b);
+      }
+      this.releaseAll(); // a finger on a button that just moved lets go
+    }
+
     build(spec) {
       const s = this.scene;
-      const b = { ...spec, lit: false, value: 0, ready: false };
-      b.root = s.add.container(spec.x, spec.y).setDepth(20);
+      const b = { ...spec, lit: false, value: 0, ready: false, s: 1, x: 0, y: 0 };
+      b.root = s.add.container(0, 0).setDepth(20);
       if (spec.look === 'super') {
         b.glow = KL.Paint.place(s, 0, 0, KL.Paint.glow(s, Math.round(spec.r * 1.9), 'rgba(255,140,26,0.9)')).setVisible(false);
         b.root.add(b.glow);
@@ -450,8 +531,12 @@ KL.PAD_LAYOUT = {
       b.face = KL.Paint.place(s, 0, 0, b.looks[0]);
       b.root.add(b.face);
       if (spec.look === 'super') {
+        const fire = superFire(s, b);
+        b.fireY = fire.y;
+        b.fire = KL.Paint.place(s, 0, fire.y, fire);
+        b.keyCap = KL.Paint.place(s, 0, 0, superKey(s, b));
         b.meter = s.add.graphics();
-        b.root.add(b.meter);
+        b.root.add([b.fire, b.keyCap, b.meter]);
       }
       return b;
     }
@@ -461,7 +546,7 @@ KL.PAD_LAYOUT = {
       const w = KL.worldPoint(this.scene, pointer);
       let best = null, bestD = 1;
       for (const b of this.buttons) {
-        const dx = w.x - b.x, dy = w.y - b.y;
+        const dx = (w.x - b.x) / b.s, dy = (w.y - b.y) / b.s;
         // generous targets: fingers are wider than cursors
         const d = b.look === 'kick'
           ? Math.max(Math.abs(dx) / (b.w / 2 + 10), Math.abs(dy) / (b.h / 2 + 14))
@@ -503,11 +588,24 @@ KL.PAD_LAYOUT = {
       for (const b of this.buttons) {
         const pad = this.pads[b.player];
         const lit = !!pad && (pad.isDown(b.action) || now - (pad.pressedAt[b.action] ?? -1e9) < flash);
-        if (lit === b.lit) continue;
-        b.lit = lit;
-        const look = b.looks[lit ? 1 : 0];
-        b.face.setTexture(look.key).setOrigin(look.ox, look.oy).setScale((lit ? 0.94 : 1) / KL.RES);
+        if (lit !== b.lit) {
+          b.lit = lit;
+          const look = b.looks[lit ? 1 : 0];
+          const k = (lit ? 0.94 : 1) / KL.UIRES;
+          b.face.setTexture(look.key).setOrigin(look.ox, look.oy).setScale(k);
+          b.keyCap?.setScale(k);
+        }
+        if (b.fire) this.flicker(b, now);
       }
+    }
+
+    /** The Super button's fire licks and sways, harder once the Super is ready (still under "reduce motion"). */
+    flicker(b, now) {
+      const k = b.lit ? 0.94 : 1, t = now / 1000;
+      const a = KL.Motion?.reduced ? 0 : b.ready ? 1.7 : 1;
+      const sy = 1 + a * (0.045 * Math.sin(t * 9.3) + 0.03 * Math.sin(t * 21.7 + 1.3));
+      const sx = 1 - a * 0.025 * Math.sin(t * 12.1 + 0.6);
+      b.fire.setScale((k * sx) / KL.UIRES, (k * sy) / KL.UIRES).setY(b.fireY * k).setRotation(a * 0.035 * Math.sin(t * 6.1));
     }
 
     /** Charge ring on a player's Super button. Returns false if that player has no button (CPU). */
@@ -519,14 +617,7 @@ KL.PAD_LAYOUT = {
       b.value = value;
       if (ready !== b.ready) {
         b.ready = ready;
-        const tw = this.scene.tweens;
-        tw.killTweensOf([b.glow, b.root]);
-        b.root.setScale(1);
-        b.glow.setVisible(ready).setAlpha(0.55);
-        if (ready) {
-          tw.add({ targets: b.glow, alpha: 1, duration: 320, yoyo: true, repeat: -1 });
-          tw.add({ targets: b.root, scaleX: 1.07, scaleY: 1.07, duration: 320, yoyo: true, repeat: -1, ease: 'Sine.inOut' });
-        }
+        this.pulse(b);
       }
       const g = b.meter, M = KL.PAD_LAYOUT.meter, R = b.r + M.gap;
       g.clear();
@@ -543,6 +634,17 @@ KL.PAD_LAYOUT = {
         g.strokePath();
       }
       return true;
+    }
+
+    /** The Super button breathes and glows while the Super is ready (relative to the pad scale). */
+    pulse(b) {
+      const tw = this.scene.tweens;
+      tw.killTweensOf([b.glow, b.root]);
+      b.root.setScale(b.s);
+      b.glow.setVisible(b.ready).setAlpha(0.55);
+      if (!b.ready) return;
+      tw.add({ targets: b.glow, alpha: 1, duration: KL.paced(360), yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+      tw.add({ targets: b.root, scaleX: b.s * 1.07, scaleY: b.s * 1.07, duration: KL.paced(360), yoyo: true, repeat: -1, ease: 'Sine.inOut' });
     }
 
     destroy() {

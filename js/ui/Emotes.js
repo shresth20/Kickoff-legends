@@ -71,24 +71,38 @@ KL.Emotes = {
 
 /** Chat button + reaction drawer (HUD). dir 1 opens to the right, −1 to the left. */
 KL.EmoteDrawer = class EmoteDrawer {
-  constructor(scene, { x, y, dir = 1, isLive = () => true, onPick }) {
+  constructor(scene, { x, y, dir = 1, scale = 1, isLive = () => true, onPick }) {
     this.scene = scene;
     this.isLive = isLive;
     this.onPick = onPick;
+    this.dir = dir;
     this.open = false;
     const D = KL.EMOTES.drawer;
     this.button = new KL.Button(scene, x, y, '☺', () => this.toggle(), { kind: 'icon', icon: 'ui_icons/11', width: 58, height: 58 }).setDepth(30);
     this.items = [];
     for (let i = 0; i < KL.EMOTES.count; i++) {
-      const bx = x + dir * (29 + D.gap + D.size / 2 + 6 + i * (D.size + D.gap));
-      const img = KL.Paint.place(scene, bx, y, KL.Emotes.badge(scene, i, D.size)).setDepth(30).setVisible(false);
-      img.baseScale = img.scaleX;
+      const img = KL.Paint.place(scene, 0, 0, KL.Emotes.badge(scene, i, D.size)).setDepth(30).setVisible(false);
+      img.unit = img.scaleX; // texture scale at UI scale 1
       img.setInteractive({ useHandCursor: true });
       img.on('pointerover', () => this.open && img.setScale(img.baseScale * 1.12));
       img.on('pointerout', () => this.open && img.setScale(img.baseScale));
       img.on('pointerdown', () => this.pick(i));
       this.items.push(img);
     }
+    this.setLayout(x, y, scale);
+  }
+
+  /** Put the chat button at (x, y), scaled by s (touch screens), with the drawer opening beside it. */
+  setLayout(x, y, s = 1) {
+    const D = KL.EMOTES.drawer;
+    this.button.setPosition(x, y).setBaseScale(s);
+    this.items.forEach((img, i) => {
+      this.scene.tweens.killTweensOf(img);
+      img.baseScale = img.unit * s;
+      img.setPosition(x + this.dir * (29 + D.gap + D.size / 2 + 6 + i * (D.size + D.gap)) * s, y);
+      img.setScale(img.baseScale).setAlpha(this.open ? 1 : 0).setVisible(this.open);
+    });
+    return this;
   }
 
   toggle(force) {
@@ -101,9 +115,9 @@ KL.EmoteDrawer = class EmoteDrawer {
       tw.killTweensOf(img);
       if (open) {
         img.setVisible(true).setAlpha(0).setScale(img.baseScale * 0.3);
-        tw.add({ targets: img, alpha: 1, scaleX: img.baseScale, scaleY: img.baseScale, duration: 200, delay: i * 35, ease: 'Back.out' });
+        tw.add({ targets: img, alpha: 1, scaleX: img.baseScale, scaleY: img.baseScale, duration: KL.paced(200), delay: KL.paced(i * 35), ease: 'Back.out' });
       } else {
-        tw.add({ targets: img, alpha: 0, scaleX: img.baseScale * 0.5, scaleY: img.baseScale * 0.5, duration: 120, onComplete: () => img.setVisible(false) });
+        tw.add({ targets: img, alpha: 0, scaleX: img.baseScale * 0.5, scaleY: img.baseScale * 0.5, duration: KL.paced(120), ease: 'Sine.in', onComplete: () => img.setVisible(false) });
       }
     });
     if (open) this.autoClose = this.scene.time.delayedCall(KL.EMOTES.drawer.autoCloseMs, () => this.toggle(false));
@@ -133,13 +147,13 @@ KL.HeadEmotes = class HeadEmotes {
     this.badges[index] = b;
     this.follow(index);
     img.setScale(base * 0.2).setAlpha(0);
-    s.tweens.add({ targets: img, scaleX: base, scaleY: base, alpha: 1, duration: 240, ease: 'Back.out' });
+    s.tweens.add({ targets: img, scaleX: base, scaleY: base, alpha: 1, duration: KL.paced(240), ease: 'Back.out' });
     // float up and fade out (alpha follows bob: 0 → −26 px)
     s.tweens.add({
       targets: b,
       bob: -26,
       delay: H.holdMs,
-      duration: 380,
+      duration: KL.paced(380),
       ease: 'Sine.in',
       onUpdate: () => img.setAlpha(1 - b.bob / -26),
       onComplete: () => {

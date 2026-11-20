@@ -8,10 +8,15 @@
  *   grid       `rows` × `cols` frames (stacked vertically) → `<out>/00..`
  *   single     one image → one atlas frame `<out>`
  *   goal       perspective goal → `<out>/back` + `<out>/near/00..04` (near net + ripple), see emitGoal
- *   background layer strip: magenta keyed (except skies), trimmed to its content, aspect kept
- *              (max 2560 wide), written as a loose PNG. js/ui/Stadium.js stacks the strips.
+ *   background layer strip: magenta keyed (except skies), trimmed to its content (or cut to `crop`),
+ *              aspect kept (max 2560 wide), written as a loose WebP. js/ui/Stadium.js stacks the strips.
+ *   fans       a line-up of `cols` fans + the same line-up arms-up (`cheer`) → one calm + one cheer
+ *              frame per fan, `fan/<out><nn>` and `fan/<out><nn>_cheer` (see emitFans)
  *
- * atlas: characters | props | ui | fx
+ * Raw files are looked up as assets/image/<name>.png, then in its sub-folders (e.g. new2/), where a
+ * browser's "<name> (1).png" duplicate also counts.
+ *
+ * atlas: characters | props | ui | fx | crowd
  * cell:  square output cell for sprite frames (pivot bottom-centre unless pivot:'center')
  * keepAspect: UI pieces keep their own aspect instead of a square cell
  * merge: 'nearest' (strip / rowSpec) — fold loose pieces into frames across the narrowest gaps
@@ -42,6 +47,17 @@ export const CHAR_STATES = [
 export const CHAR_CELL = 512;
 export const CHAR_STAND_PX = 368;
 
+/**
+ * Fan frames (crowd atlas): every fan stands FAN_STAND_PX tall (head to the bottom of its ground
+ * shadow) in a FAN_CELL_W × FAN_CELL_H cell, the middle of its legs at the cell's centre line and its
+ * feet on the line FAN_FEET_Y — calm and cheer frames alike. The game shows fans ≤ ~70 logical px tall,
+ * so this stays sharp on 3× screens. Stadium.js reads the numbers back from frame.customData.fan.
+ */
+export const FAN_STAND_PX = 240;
+export const FAN_CELL_W = 208;
+export const FAN_CELL_H = 320;
+export const FAN_FEET_Y = 312;
+
 function character(id) {
   return [
     { name: `${id}_turnaround`, kind: 'strip', atlas: 'characters', cols: 4, cell: CHAR_CELL, out: `${id}/turnaround`, charId: id, sizeRef: 'height' },
@@ -68,10 +84,15 @@ export const ASSETS = [
 
   { name: 'bg_sky', kind: 'background' },
   { name: 'bg_stands', kind: 'background' },
-  { name: 'bg_fence_crowd_a', kind: 'background' },
-  { name: 'bg_fence_crowd_b', kind: 'background' },
-  { name: 'bg_fence_crowd_c', kind: 'background' },
-  { name: 'bg_crowd_cheer', kind: 'background', rows: 2, outs: ['bg_crowd_calm', 'bg_crowd_cheer'] }, // same crowd: calm row + arms-up row (2-frame goal cheer)
+  // the one fence between the crowd and the pitch. crop (source px) = from the middle of the left
+  // post to the middle of the right one, so the tile repeats seamlessly (the two half posts meet).
+  // key 'unmix': its thin wires are blended with the magenta; take it back out exactly (unmixMagenta)
+  { name: 'bg_fence_only', kind: 'background', outs: ['bg_fence'], crop: [58, 223, 1613, 714], key: 'unmix' },
+  // the crowd: three line-ups of 9 fans, each drawn calm and arms-up (`cheer`). Every fan becomes its
+  // own pair of frames in the crowd atlas (fan/a00 + fan/a00_cheer …), see emitFans
+  { name: 'bg_crowd_anime_a', kind: 'fans', atlas: 'crowd', cols: 9, cheer: 'bg_crowd_anime_a_cheer', out: 'a' },
+  { name: 'bg_crowd_anime_b', kind: 'fans', atlas: 'crowd', cols: 9, cheer: 'bg_crowd_anime_b_cheer', out: 'b' },
+  { name: 'bg_crowd_anime_c', kind: 'fans', atlas: 'crowd', cols: 9, cheer: 'bg_crowd_anime_c_cheer', out: 'c' },
   { name: 'field', kind: 'background', outs: ['bg_pitch'] }, // the pitch: red barrier + striped grass + markings
   { name: 'bg_sky_night', kind: 'background' },
 

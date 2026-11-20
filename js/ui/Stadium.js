@@ -1,31 +1,39 @@
-/* Builds the layered stadium for any scene. Each background is a trimmed strip
- * (see tools/slice-sheet.mjs) placed in its own screen band, back to front:
- * sky → stands (railing + floodlights) → two crowd terraces → pitch.
+/* Builds the layered stadium for any scene, back to front:
+ * sky → stands (railing + floodlights) → terrace with two rows of fans → one fence → pitch.
+ * The sky, stands, fence and pitch are trimmed strips (see tools/slice-sheet.mjs), each in its own
+ * screen band; the fans are single sprites cut from the crowd line-ups (crowd atlas).
  *
- * The crowd sits well behind the pitch, so it is drawn small and in tiers: every row further
- * back is smaller, higher and hazier (aerial perspective), which reads as a stadium bowl seen
- * from the touchline instead of fans standing right behind the players.
- * Bands are in logical px at 1280×720; tweak them in KL.STADIUM_LAYOUT. */
+ * The crowd sits well behind the pitch, so it is drawn small and in two rows: the back row is
+ * smaller, higher and hazier (aerial perspective), which reads as a stadium bowl seen from the
+ * touchline instead of fans standing right behind the players. Every fan supports one of the two
+ * players — about half each, standing mixed in little groups — and only the scorer's half cheers.
+ * Bands are in logical px at 1280×720; tweak them in KL.STADIUM_LAYOUT. Every layer runs past both
+ * sides of the design area (KL.STADIUM_MARGIN) and the sky reaches up past its top, so a wide phone
+ * or a tall tablet (KL.View) sees more stadium, never an edge. */
 window.KL = window.KL || {};
 
 KL.STADIUM_LAYOUT = {
   // fit 'cover': uniform scale that covers the band · 'stretch': exactly spans the view width
   // (+ parallax margin) · 'width': uniform scale to the view width, sat on the bottom edge, so the
   // markings line up with the goals (mirrored copies fill the parallax margin) · tiled layers repeat sideways
-  // sky: the mountains sit just behind the stands' wall; the top clouds peek in from above
-  sky: { top: -88, height: 472, fit: 'cover', factor: 0.1 },
+  // sky: the mountains sit just behind the stands' wall; the top clouds peek in from above. capTo: on a
+  // view taller than 16:9 (tablets) the sky's top colour carries on up to here
+  sky: { top: -88, height: 472, fit: 'cover', factor: 0.1, capTo: -300 },
   stands: { top: 185, height: 82, factor: 0.25, haze: 0.5 },
-  // back → front (two rows). haze: how much of the sky colour is mixed in.
-  // The front row's fans are under ⅓ of a player's height, so they read as being across the pitch.
-  // The back row's see-through fence top sits over the stands' wall, so no sky shows between rows.
-  tiers: [
-    { top: 235, height: 74, factor: 0.38, haze: 0.3 },
-    { top: 279, height: 82, factor: 0.55, haze: 0.1 },
+  // The fans, back row → front row. feet: the line a row stands on · stand: a fan's height, head to
+  // toe · gap: px between neighbours (± 15 %) · haze: how much of the sky colour is mixed in · hop: px
+  // a cheering fan jumps · flags: share of fans waving a flag in their player's kit.
+  // The front row is about half a player's height, so the fans read as being across the pitch.
+  // Their feet never show: the terrace's front step hides the back row's, the pitch's barrier the front row's.
+  crowd: [
+    { feet: 325, stand: 52, gap: 21, factor: 0.38, haze: 0.3, hop: 2, flags: 0.12 },
+    { feet: 369, stand: 64, gap: 26, factor: 0.55, haze: 0.1, hop: 3, flags: 0.08 },
   ],
-  // Fence rails in the calm front-row strip (bg_crowd_calm), as fractions of its height: the top
-  // rail ends at 8 %, the bottom rail starts at 88 %. Measured from the art; see the rails below.
-  frontRails: [0.08, 0.882],
-  backRails: [0.07, 0.9], // same for the fence crowds (bg_fence_crowd_a/b/c)
+  // the terrace the fans stand on, in the shade of the stand: from under its wall (top) to the barrier;
+  // step: the top of the front step, in front of the back row and behind the front row
+  terrace: { top: 258, step: 319, back: '#3c3874', lip: '#7d79bd', face: '#4a4589', floor: '#34306a' },
+  // the one fence between the crowd and the pitch (bg_fence, a seamless tile), standing on the barrier
+  fence: { top: 312, height: 48, factor: 0.62, haze: 0.05 },
   // Floodlight lamp faces in the stands strip (bg_stands), as fractions of its width / height: two per
   // tile, measured on the art. At night they glow and throw a faint cone of light over the crowd.
   floodlights: { x: [0.1743, 0.8253], y: 0.09 },
@@ -35,7 +43,9 @@ KL.STADIUM_LAYOUT = {
   pitch: { top: 357, fit: 'width', factor: 1 },
   showcaseY: 620, // where the menu / result screens stand their big characters (on the grass)
 };
-KL.STADIUM_MARGIN = 200; // extra px on each side so the camera can drift without showing an edge
+// extra px on each side of the 1280-wide design area: the widest view (KL.View.LIMITS, 21:9 phones
+// reach 224 px past each side) plus the far layers' parallax drift, so no edge ever shows
+KL.STADIUM_MARGIN = 280;
 /** Night floodlights: a warm glow and flare on each lamp, a faint cone of light falling towards the pitch. */
 KL.FLOODLIGHT = {
   glow: 40, // px across the halo
@@ -43,14 +53,20 @@ KL.FLOODLIGHT = {
   beam: { width: 180, alpha: 0.13, lean: 0.22 }, // lean: max tilt (rad) towards the pitch centre
   shimmer: 0.1, // ± alpha, slow, each lamp on its own phase
 };
-/** The crowd: both rows cheer on the same beat — the front row throws its arms up, the rows behind jump. */
+/**
+ * The crowd. Each fan supports one player; when that player scores, their fans throw their arms up and
+ * jump on the beat (calm ↔ arms-up frame) and wave their flags, while the other half stays put.
+ */
 KL.CROWD = {
-  beatMs: 170, // one arms-up / arms-down beat
-  hop: 3, // px the back rows jump on an up beat
+  beatMs: 170, // one beat of a fan's jump / arms-up / arms-down cycle (each fan ± beatJitter, so they drift a little apart)
+  beatJitter: 0.08,
+  reactDelayMs: 140, // fans don't all react on the same frame: each starts up to this much later
   goalBeats: 13, // a goal: ~2.4 s of cheering
-  reactBeats: 3, // a shot near goal / a super: a quick "ooh!"
-  reactGapMs: 1400, // at least this long between quick reactions
+  reactBeats: 3, // a shot at goal / a super: a quick "ooh!" from the attacker's fans
+  reactGapMs: 1400, // at least this long between quick reactions (per side)
+  nearGoal: 330, // a strike within this many px of the goal a player attacks counts as a chance
   // camera flashes popping in the stands: seconds between idle flashes, and how many on a goal
+  // (mostly from the scorer's fans)
   flashEvery: { day: [1.4, 4], night: [0.5, 1.8] },
   goalFlashes: 34,
 };
@@ -63,14 +79,13 @@ KL.Stadium = {
    * `color` mixed into its opaque pixels. Downscaled in halving steps (clean, no shimmering
    * chain-link) and cached in the global texture manager, so later scenes reuse it.
    */
-  scaledStrip(scene, src, h, haze, color, matchWidth = 0) {
+  scaledStrip(scene, src, h, haze, color) {
     const R = KL.RES;
-    const key = `kl:strip:${src}:${h}:${R}:${haze}:${color}:${matchWidth}`;
+    const key = `kl:strip:${src}:${h}:${R}:${haze}:${color}`;
     if (scene.textures.exists(key)) return key;
     const img = scene.textures.get(src).getSourceImage();
     const th = Math.round(h * R);
-    // matchWidth: force the same tile width as another strip so swapped frames repeat in step
-    const tw = matchWidth || Math.round((img.width * th) / img.height);
+    const tw = Math.round((img.width * th) / img.height);
     let cur = img, cw = img.width, ch = img.height;
     while (cw / 2 >= tw) {
       const c = document.createElement('canvas');
@@ -177,11 +192,158 @@ KL.Stadium = {
   },
 
   /**
-   * @param {{ night?: boolean, parallax?: boolean, bus?: object }} opts  bus: the match EventBus, so the
-   *   crowd reacts to shots near goal and supers
-   * @returns {{ layers: object, cheer: () => void, react: () => void, update: (camX:number)=>void }}
+   * Who stands where in one row of the crowd, from x0 to x1 (pure: `rand` returns [0, 1)).
+   * Supporters stand in little groups of 1–3 and the groups take turns, so the two players' fans are
+   * mixed all along the stand; a group never puts its side more than 2 fans ahead, so each row is
+   * split 50 / 50. Nobody stands near their double: a fan type isn't used again within `spread` places.
+   * @returns {{ x: number, type: string, team: 0|1, flip: boolean, dy: number, size: number, flag: boolean }[]}
    */
-  build(scene, { night = false, parallax = true, bus = null } = {}) {
+  lineup({ x0, x1, gap, types, flags = 0, rand = Math.random, spread = 6 }) {
+    const out = [], recent = [], count = [0, 0];
+    let team = rand() < 0.5 ? 0 : 1, left = 0;
+    for (let x = x0; x <= x1; x += gap * (0.85 + rand() * 0.3)) {
+      if (left <= 0) {
+        team = 1 - team;
+        left = Math.max(1, Math.min(1 + Math.floor(rand() * 3), count[1 - team] - count[team] + 2));
+      }
+      left--;
+      count[team]++;
+      const fresh = types.filter((t) => !recent.includes(t));
+      const pool = fresh.length ? fresh : types;
+      const type = pool[Math.floor(rand() * pool.length)];
+      recent.push(type);
+      if (recent.length > Math.min(spread, types.length - 1)) recent.shift();
+      out.push({ x, type, team, flip: rand() < 0.5, dy: (rand() - 0.5) * 3, size: 0.95 + rand() * 0.1, flag: rand() < flags });
+    }
+    return out;
+  },
+
+  /**
+   * Every fan frame of the crowd atlas, scaled so a fan stands `stand` logical px tall, at device
+   * resolution (halving steps like the strips: no shimmering outlines) with `haze` of `color` mixed in.
+   * Frames keep their cell (trim), so a sprite anchored on the feet line stays put when calm ↔ cheer
+   * swap. Cached in the global texture manager.
+   */
+  fanSheet(scene, stand, haze, color) {
+    const R = KL.RES;
+    const key = `kl:fans:${stand}:${R}:${haze}:${color}`;
+    if (scene.textures.exists(key)) return key;
+    const src = scene.textures.get('crowd');
+    const items = src.getFrameNames().filter((n) => n.startsWith('fan/')).map((name) => {
+      const f = src.get(name);
+      const k = (stand * R) / f.customData.fan.stand;
+      return { name, f, k, w: Math.max(1, Math.round(f.cutWidth * k)), h: Math.max(1, Math.round(f.cutHeight * k)) };
+    });
+    // shelf-pack
+    const PAD = 2, MAXW = 2048;
+    let x = 0, y = 0, rowH = 0, width = 0;
+    for (const it of [...items].sort((a, b) => b.h - a.h)) {
+      if (x + it.w > MAXW) (x = 0), (y += rowH + PAD), (rowH = 0);
+      it.x = x;
+      it.y = y;
+      x += it.w + PAD;
+      rowH = Math.max(rowH, it.h);
+      width = Math.max(width, x);
+    }
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, width);
+    out.height = Math.max(1, y + rowH);
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingQuality = 'high';
+    for (const it of items) {
+      const f = it.f;
+      let cur = f.source.image, sx = f.cutX, sy = f.cutY, cw = f.cutWidth, ch = f.cutHeight;
+      while (cw / 2 >= it.w) {
+        const c = document.createElement('canvas');
+        c.width = Math.round(cw / 2);
+        c.height = Math.round(ch / 2);
+        const cx = c.getContext('2d');
+        cx.imageSmoothingQuality = 'high';
+        cx.drawImage(cur, sx, sy, cw, ch, 0, 0, c.width, c.height);
+        (cur = c), (sx = sy = 0), (cw = c.width), (ch = c.height);
+      }
+      ctx.drawImage(cur, sx, sy, cw, ch, it.x, it.y, it.w, it.h);
+    }
+    if (haze > 0) {
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.globalAlpha = haze;
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, out.width, out.height);
+    }
+    const tex = scene.textures.addImage(key, out); // a plain image source (see scaledStrip)
+    for (const it of items) {
+      const f = it.f, k = it.k;
+      const fr = tex.add(it.name, 0, it.x, it.y, it.w, it.h);
+      fr.setTrim(Math.round(f.realWidth * k), Math.round(f.realHeight * k), Math.round(f.x * k), Math.round(f.y * k), it.w, it.h);
+      fr.customData = f.customData;
+    }
+    return key;
+  },
+
+  /**
+   * A supporter's flag in a player's kit: a stick with a two-colour cloth, ink outlined, at device
+   * resolution, with `haze` of `color` mixed in like its row. 18 × 36 logical px; its origin goes at
+   * the bottom of the stick (0.1, 1).
+   */
+  flagTexture(scene, kit, haze = 0, color = '#000') {
+    const R = KL.RES;
+    const key = `kl:crowd:flag:${kit.primary}:${kit.secondary}:${R}:${haze}:${color}`;
+    if (scene.textures.exists(key)) return key;
+    const c = document.createElement('canvas');
+    c.width = 18 * R;
+    c.height = 36 * R;
+    const ctx = c.getContext('2d');
+    ctx.scale(R, R);
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = '#1B1F3B';
+    // stick
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(1.8, 35);
+    ctx.lineTo(1.8, 1.5);
+    ctx.stroke();
+    ctx.strokeStyle = '#c9a77a';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    // cloth: a little ripple, the kit's main colour with a band of its second colour
+    const cloth = () => {
+      ctx.beginPath();
+      ctx.moveTo(2.6, 2);
+      ctx.quadraticCurveTo(9, 0.2, 16.6, 2.6);
+      ctx.lineTo(16.6, 13.4);
+      ctx.quadraticCurveTo(9, 11, 2.6, 13);
+      ctx.closePath();
+    };
+    cloth();
+    ctx.fillStyle = kit.primary;
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.fillStyle = kit.secondary;
+    ctx.fillRect(0, 6, 18, 3.4);
+    ctx.restore();
+    cloth();
+    ctx.strokeStyle = '#1B1F3B';
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    if (haze > 0) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.globalAlpha = haze;
+      ctx.fillStyle = color;
+      ctx.fillRect(0, 0, c.width, c.height);
+    }
+    scene.textures.addImage(key, c);
+    return key;
+  },
+
+  /**
+   * @param {{ night?: boolean, parallax?: boolean, bus?: object, teams?: {primary:string, secondary:string}[] }} opts
+   *   bus: the match EventBus, so each side's fans react to their player's shots at goal and supers ·
+   *   teams: the two players' kits, for the fans' flags (no flags without them)
+   * @returns {{ layers: object, cheer: (team?: 0|1) => void, react: (team?: 0|1) => void, update: (camX:number)=>void }}
+   */
+  build(scene, { night = false, parallax = true, bus = null, teams = null } = {}) {
     const W = KL.TUNING.world;
     const L = KL.STADIUM_LAYOUT;
     const M = KL.STADIUM_MARGIN;
@@ -203,6 +365,7 @@ KL.Stadium = {
         for (const [x, ox] of [[0, 1], [W.width, 0]]) scene.add.image(x, top, texKey).setOrigin(ox, 0).setScale(s).setFlipX(true).setDepth(depth);
         img.setDepth(depth);
         img.factor = band.factor;
+        img.baseX = img.x;
         img.baseY = top;
         return img;
       }
@@ -212,36 +375,35 @@ KL.Stadium = {
       } else {
         const s = Math.max(span / src.width, band.height / src.height);
         img = scene.add.tileSprite(-M, band.top, Math.ceil(span / s) + 2, src.height, texKey).setOrigin(0, 0).setScale(s);
+        if (band.capTo != null && band.capTo < band.top) {
+          // the top two rows of the texture stretched up to capTo (a flat band of the sky's top
+          // colour), tucked one px under the sky; it drifts with it
+          img.cap = scene.add.tileSprite(-M, band.top + 1, img.width, 2, texKey).setOrigin(0, 1).setScale(s, (band.top + 1 - band.capTo) / 2).setDepth(depth);
+        }
       }
       img.setDepth(depth);
       img.factor = band.factor;
+      img.baseX = img.x;
       img.baseY = band.top;
       return img;
     };
     /** Distant strip: prescaled to its band height, tiled sideways at 1 texture px = 1 device px. */
-    const strip = (texKey, band, depth, matchWidth = 0) => {
+    const strip = (texKey, band, depth) => {
       if (!has(texKey)) return null;
-      const key = KL.Stadium.scaledStrip(scene, texKey, band.height, band.haze || 0, hazeColor, matchWidth);
+      const key = KL.Stadium.scaledStrip(scene, texKey, band.height, band.haze || 0, hazeColor);
       const th = scene.textures.get(key).getSourceImage().height;
       const img = scene.add.tileSprite(-M, band.top, Math.ceil(span * R), th, key).setOrigin(0, 0).setScale(1 / R).setDepth(depth);
       img.factor = band.factor;
+      img.baseX = img.x;
       img.baseY = band.top;
-      img.stripKey = key; // (a TileSprite's .texture is its own canvas, not the tiled image)
-      img.tileW = scene.textures.get(key).getSourceImage().width;
+      img.tileW = scene.textures.get(key).getSourceImage().width; // (a TileSprite's .texture is its own canvas, not the tiled image)
       img.tileH = th;
       return img;
     };
 
-    // front row: the calm crowd (it has a matching arms-up frame for goals); row(s) behind: fence
-    // crowds, shuffled per scene so the stands vary between matches
-    const backRows = Phaser.Utils.Array.Shuffle(['bg_fence_crowd_a', 'bg_fence_crowd_b', 'bg_fence_crowd_c'].filter(has));
-    const front = has('bg_crowd_calm') ? 'bg_crowd_calm' : backRows.pop();
-    const rowKeys = L.tiers.map((_, i) => (i === L.tiers.length - 1 ? front : backRows[i] || front));
-    const tiers = L.tiers.map((band, i) => strip(rowKeys[i], band, 1.1 + i * 0.1));
-    // each tier starts at a different horizontal offset so the repeating strips don't line up
-    tiers.forEach((t, i) => t && (t.tilePositionX = t.tileBase = i * 173 * R));
+    const C = KL.CROWD;
+    const still = KL.SkyLife?.still; // OS "reduce motion": no jumping, waving or flashing
 
-    const frontRow = tiers[tiers.length - 1];
     // living sky: when the painted sky has been split (tools/sky-split.mjs), show its clear version
     // and let SkyLife put the clouds back as drifting sprites
     const skyKey = night && has('bg_sky_night') ? 'bg_sky_night' : 'bg_sky';
@@ -249,61 +411,76 @@ KL.Stadium = {
     const layers = {
       sky: big(skyData ? skyData.clear : skyKey, L.sky, 0),
       stands: strip('bg_stands', L.stands, 1),
-      tiers,
-      // arms-up frame of the front row, same tile width so the fans stay in place when it swaps in
-      cheer: front === 'bg_crowd_calm' && has('bg_crowd_cheer') && frontRow ? strip('bg_crowd_cheer', L.tiers[L.tiers.length - 1], frontRow.depth, frontRow.tileW) : null,
+      // the one fence, in front of both rows of fans
+      fence: strip('bg_fence', L.fence, 1.3),
       pitch: big('bg_pitch', L.pitch, 3),
+      terrace: [],
+      fans: [],
     };
-    if (layers.cheer) layers.cheer.setVisible(false).tilePositionX = layers.cheer.tileBase = frontRow.tileBase;
     KL.SkyLife.build(scene, { sky: layers.sky, data: skyData, night, parallax });
 
-    /** Texture rows ty … ty+h of a crowd strip, drawn at exactly their own spot (follows its parallax). */
-    const pinned = (row, ty, h, depth) => {
-      const p = scene.add.tileSprite(-M, row.baseY + ty / R, Math.ceil(span * R), h, row.stripKey).setOrigin(0, 0).setScale(1 / R).setDepth(depth);
-      p.tilePositionY = ty;
-      p.tilePositionX = p.tileBase = row.tileBase;
-      p.factor = row.factor;
-      p.baseY = p.y;
-      return p;
+    // The terrace, in the shade of the stand (flat colour, so it needs no parallax): its back behind
+    // the back row, then the front step — lit lip, face and the floor the front row stands on — which
+    // hides the back row's feet.
+    const T = L.terrace, rows = L.crowd;
+    const tint = (hex, amount) => {
+      const c = Phaser.Display.Color.Interpolate.ColorWithColor(Phaser.Display.Color.HexStringToColor(hex), Phaser.Display.Color.HexStringToColor(hazeColor), 100, Math.round(amount * 100));
+      return Phaser.Display.Color.GetColor(c.r, c.g, c.b);
     };
+    const backWall = scene.add.graphics().setDepth(1.05);
+    backWall.fillStyle(tint(T.back, rows[0].haze)).fillRect(-M, T.top, span, T.step - T.top + 2);
+    const frontStep = scene.add.graphics().setDepth(1.15);
+    frontStep.fillStyle(tint(T.floor, rows[1].haze)).fillRect(-M, T.step, span, L.pitch.top + 16 - T.step);
+    frontStep.fillStyle(tint(T.face, rows[1].haze)).fillRect(-M, T.step, span, 7);
+    frontStep.fillStyle(tint(T.lip, rows[1].haze)).fillRect(-M, T.step, span, 1.5);
+    layers.terrace.push(backWall, frontStep);
 
-    // The fence is painted into the crowd strips, and the arms-up frame's fence sits a pixel or two
-    // lower than the calm frame's. Pin the front row's rails: a static copy of the calm frame's top
-    // and bottom rail, drawn over both frames, so only the fans change when the crowd cheers.
-    layers.rails = [];
-    if (layers.cheer) {
-      const [topEnd, bottomStart] = L.frontRails;
-      const th = frontRow.tileH;
-      const y1 = Math.round(th * topEnd), y2 = Math.round(th * bottomStart);
-      layers.rails.push(pinned(frontRow, 0, y1, frontRow.depth + 0.05), pinned(frontRow, y2, th - y2, frontRow.depth + 0.05));
-    }
-    // The rows behind cheer on the same beat by jumping: the band of fans between their rails lifts,
-    // drawn over the still strip (so a jump uncovers the fans' own waists, not a gap) and under
-    // pinned copies of the rails (so the fence never moves).
-    layers.bands = [];
-    for (const row of tiers.slice(0, -1)) {
-      if (!row) continue;
-      const [topEnd, bottomStart] = L.backRails;
-      const th = row.tileH;
-      const y1 = Math.round(th * topEnd), y2 = Math.round(th * bottomStart);
-      const band = pinned(row, y1, y2 - y1, row.depth + 0.02);
-      band.lift = 0;
-      layers.bands.push(band);
-      layers.rails.push(pinned(row, 0, y1, row.depth + 0.05), pinned(row, y2, th - y2, row.depth + 0.05));
+    // The fans: one sprite each with two frames (calm / arms up), on their row's feet line. Every fan
+    // supports one of the two players (KL.Stadium.lineup); some wave a flag in their player's kit.
+    const fans = layers.fans;
+    const atlas = has('crowd') ? scene.textures.get('crowd') : null;
+    const types = atlas ? atlas.getFrameNames().filter((n) => n.startsWith('fan/') && !n.endsWith('_cheer') && atlas.has(`${n}_cheer`)) : [];
+    if (types.length) {
+      rows.forEach((row, r) => {
+        const key = KL.Stadium.fanSheet(scene, row.stand, row.haze, hazeColor);
+        const depth = 1.1 + r * 0.1;
+        const spots = KL.Stadium.lineup({ x0: -M - row.gap, x1: W.width + M + row.gap, gap: row.gap, types, flags: teams ? row.flags : 0 });
+        for (const p of spots) {
+          const src = atlas.get(p.type);
+          const img = scene.add.image(p.x, row.feet + p.dy, key, p.type).setOrigin(0.5, src.customData.fan.feet / src.realHeight);
+          // nearer (lower) fans overlap their neighbours. (No scroll factor: the camera never scrolls,
+          // it sits on the view's offset, which every layer must follow exactly.)
+          img.setScale(p.size / R).setFlipX(p.flip).setDepth(depth + p.dy * 0.002);
+          const fan = {
+            img, team: p.team, front: r === rows.length - 1, stand: row.stand * p.size, factor: row.factor,
+            calm: p.type, cheer: `${p.type}_cheer`, up: false, baseY: img.y, lift: 0,
+            hop: row.hop * Phaser.Math.FloatBetween(0.8, 1.2), from: 0, until: -1, beat: C.beatMs, phase: Math.random() * Math.PI * 2,
+          };
+          if (p.flag) {
+            // held up beside the head (the stick's foot hidden behind the fan), leaning outwards
+            const side = Math.random() < 0.5 ? -1 : 1, s = fan.stand;
+            fan.side = side;
+            fan.flagDy = -s * 0.42;
+            fan.flag = scene.add.image(p.x + side * s * 0.17, img.y + fan.flagDy, KL.Stadium.flagTexture(scene, teams[p.team], row.haze, hazeColor));
+            fan.flag.setOrigin(side < 0 ? 0.9 : 0.1, 1).setFlipX(side < 0).setScale((s * 0.62) / 36 / R).setDepth(img.depth - 0.0005).setRotation(side * 0.1);
+          }
+          fans.push(fan);
+        }
+      });
     }
 
     if (night) {
-      // darken everything behind the pitch a little more than the pitch itself
-      scene.add.rectangle(0, 0, W.width, L.pitch.top + 20, 0x0b1033, 0.42).setOrigin(0).setDepth(2.5).setScrollFactor(0);
-      scene.add.rectangle(0, L.pitch.top + 20, W.width, W.height, 0x0b1033, 0.22).setOrigin(0).setDepth(3.5).setScrollFactor(0);
+      // darken everything behind the pitch a little more than the pitch itself (across the widest view)
+      const top = Math.min(L.sky.capTo ?? 0, 0) - 20;
+      scene.add.rectangle(-M, top, span, L.pitch.top + 20 - top, 0x0b1033, 0.42).setOrigin(0).setDepth(2.5);
+      scene.add.rectangle(-M, L.pitch.top + 20, span, W.height - L.pitch.top, 0x0b1033, 0.22).setOrigin(0).setDepth(3.5);
 
       // the floodlights are on: drawn over the night shade (light isn't shaded), under the pitch
       const st = layers.stands;
       if (st && L.floodlights) {
         const F = KL.FLOODLIGHT, tex = KL.Stadium.lightTextures(scene);
         const tileW = st.tileW / R, y = st.baseY + L.floodlights.y * (st.tileH / R);
-        const sf = parallax ? st.factor : 1;
-        const add = (key, depth) => scene.add.image(0, y, key).setScrollFactor(sf, 1).setDepth(depth).setBlendMode(Phaser.BlendModes.ADD);
+        const add = (key, depth) => scene.add.image(0, y, key).setDepth(depth).setBlendMode(Phaser.BlendModes.ADD);
         for (let k = 0; k * tileW < span; k++) {
           for (const fx of L.floodlights.x) {
             const x = -M + (k + fx) * tileW;
@@ -314,106 +491,130 @@ KL.Stadium = {
             const glow = add(tex.glow, 2.56).setPosition(x, y).setDisplaySize(F.glow, F.glow);
             add(tex.glow, 2.57).setPosition(x, y).setDisplaySize(F.flare[0], F.flare[1]).setAlpha(0.55);
             // a slow shimmer in the night air (not with "reduce motion")
-            if (!KL.SkyLife?.still) scene.tweens.add({ targets: glow, alpha: 1 - F.shimmer * 2, duration: Phaser.Math.Between(1400, 2600), yoyo: true, repeat: -1, ease: 'Sine.inOut', delay: Phaser.Math.Between(0, 1500) });
+            if (!still) scene.tweens.add({ targets: glow, alpha: 1 - F.shimmer * 2, duration: Phaser.Math.Between(1400, 2600), yoyo: true, repeat: -1, ease: 'Sine.inOut', delay: Phaser.Math.Between(0, 1500) });
           }
         }
       }
     }
 
-    const all = () => [layers.stands, ...layers.tiers, layers.cheer, ...layers.bands, ...layers.rails].filter(Boolean);
-    const C = KL.CROWD;
-    const calm = KL.SkyLife?.still; // OS "reduce motion": no jumping, no flashing
-
-    // camera flashes: a small pool of pops, over the fans' heads (above the night shade, so they pop)
+    // camera flashes: a small pool of pops at the fans' heads (above the night shade, so they pop)
     const flashKey = KL.Stadium.flashTexture(scene);
     const flashes = Array.from({ length: 14 }, () => scene.add.image(0, 0, flashKey).setDepth(2.6).setVisible(false));
-    const rows = tiers.filter(Boolean);
+    const V = KL.View;
+    const inView = fans.filter((f) => f.img.x > V.x + 8 && f.img.x < V.x + V.w - 8);
+    const sides = [0, 1].map((t) => inView.filter((f) => f.team === t));
     let nextFlash = 0;
-    const flash = () => {
+    /** A flash from one fan's camera: mostly one of `team`'s fans when given, anyone otherwise. */
+    const flash = (team) => {
+      const pool = team != null && Math.random() < 0.8 ? sides[team] : inView;
+      const f = Phaser.Utils.Array.GetRandom(pool);
+      if (!f) return;
       const img = flashes[nextFlash++ % flashes.length];
-      const row = rows[Math.random() < 0.55 ? rows.length - 1 : Math.floor(Math.random() * rows.length)];
-      if (!row) return;
-      const h = row.tileH / R;
-      const size = (row === frontRow ? 11 : 8) * Phaser.Math.FloatBetween(0.75, 1.15);
+      const size = (f.front ? 11 : 8) * Phaser.Math.FloatBetween(0.75, 1.15);
       scene.tweens.killTweensOf(img);
-      img.setPosition(Phaser.Math.Between(8, W.width - 8), row.baseY + h * Phaser.Math.FloatBetween(0.22, 0.55)).setScrollFactor(parallax ? row.factor : 1, 1);
+      img.setPosition(f.img.x + f.stand * Phaser.Math.FloatBetween(-0.2, 0.2), f.baseY - f.stand * Phaser.Math.FloatBetween(0.62, 0.92));
       img.setVisible(true).setAlpha(1).setScale((size * 0.45) / (24 * R));
       scene.tweens.add({ targets: img, scale: size / (24 * R), alpha: 0, duration: Phaser.Math.Between(140, 220), ease: 'Quad.out', onComplete: () => img.setVisible(false) });
     };
-    const burst = (n, ms) => {
-      for (let i = 0; i < n; i++) scene.time.delayedCall(Math.random() * ms, flash);
+    const burst = (n, ms, team) => {
+      for (let i = 0; i < n; i++) scene.time.delayedCall(Math.random() * ms, () => flash(team));
     };
-    if (!calm) {
+    if (!still) {
       const [lo, hi] = night ? C.flashEvery.night : C.flashEvery.day;
       const idle = () => scene.time.delayedCall(Phaser.Math.FloatBetween(lo, hi) * 1000, () => (flash(), idle()));
       idle();
     }
 
-    // the back rows ease towards their lift every frame (a quick jump, a softer landing)
-    if (layers.bands.length) {
-      const ease = (time, delta) => {
-        for (const b of layers.bands) {
-          const target = b.baseY - b.lift;
-          const k = 1 - Math.pow(b.lift ? 0.3 : 0.55, delta / 16.7);
-          b.y += (target - b.y) * k;
+    // Crowd time runs with the game (its goal slow-mo too) and stops while a match is paused. A
+    // cheering fan goes round a three-beat cycle of its own — jump with arms up, land with them still
+    // up, arms down — until it's done, so most of a cheering side has its arms up at any moment.
+    let clock = 0;
+    const beatMs = C.beatMs / KL.animPace(); // the look-only pace (KL.TUNING.motion.animPace) sets the beat
+    const animate = (time, delta) => {
+      if (scene.paused) return;
+      clock += delta * (scene.time.timeScale ?? 1);
+      const k = delta / 16.7;
+      for (const f of fans) {
+        const cheering = clock >= f.from && clock < f.until;
+        const beat = cheering ? Math.floor((clock - f.from) / f.beat) % 3 : -1;
+        const up = beat === 0 || beat === 1;
+        if (up !== f.up) {
+          f.up = up;
+          f.img.setFrame(up ? f.cheer : f.calm);
         }
-      };
-      scene.events.on('update', ease);
-      scene.events.once('shutdown', () => scene.events.off('update', ease));
+        f.lift = beat === 0 && !still ? f.hop : 0;
+        // a quick jump, a softer landing (eased over a few frames, never snapped)
+        const target = f.baseY - f.lift;
+        if (f.img.y !== target) {
+          f.img.y += (target - f.img.y) * (1 - Math.pow(f.lift ? 0.45 : 0.68, k));
+          if (Math.abs(target - f.img.y) < 0.02) f.img.y = target;
+        }
+        if (f.flag) {
+          // a slow sway at rest; waved hard while their player is celebrating
+          f.flag.y = f.img.y + f.flagDy;
+          const lean = still ? 0.1 : cheering ? 0.2 + 0.34 * Math.sin(clock / 90 + f.phase) : 0.1 + 0.05 * Math.sin(clock / 700 + f.phase);
+          f.flag.rotation = f.side * lean;
+        }
+      }
+    };
+    if (fans.length) {
+      scene.events.on('update', animate);
+      scene.events.once('shutdown', () => scene.events.off('update', animate));
     }
 
-    let cheerTimer = null;
-    let busyUntil = 0;
+    const busy = [-Infinity, -Infinity]; // per side: crowd time until which its fans are cheering
     /**
-     * Both rows cheer on one beat: on every up beat the front row throws its arms up (calm ↔ arms-up
-     * frame) while the rows behind jump. The fences never move.
+     * `team`'s fans (everyone when not given) cheer for `beats` beats, each starting a moment apart.
+     * exclusive: the other side's fans stop (they have nothing to cheer about).
      */
-    const cheer = (beats) => {
-      cheerTimer?.remove();
-      busyUntil = scene.time.now + (beats + 1) * C.beatMs;
-      let n = 0;
-      cheerTimer = scene.time.addEvent({
-        delay: C.beatMs,
-        repeat: beats,
-        callback: () => {
-          n++;
-          const up = n % 2 === 1 && n <= beats;
-          if (layers.cheer && frontRow) {
-            layers.cheer.setVisible(up);
-            frontRow.setVisible(!up);
-          }
-          for (const b of layers.bands) b.lift = up && !calm ? C.hop * Phaser.Math.FloatBetween(0.85, 1.15) : 0;
-        },
-      });
+    const cheer = (team, beats, exclusive = false) => {
+      for (const f of fans) {
+        if (team != null && f.team !== team) {
+          if (exclusive) f.until = Math.min(f.until, clock);
+          continue;
+        }
+        f.from = clock + Math.random() * C.reactDelayMs;
+        f.beat = beatMs * (1 + (Math.random() * 2 - 1) * C.beatJitter);
+        f.until = f.from + beats * f.beat;
+      }
+      for (const t of team != null ? [team] : [0, 1]) busy[t] = clock + (beats + 1) * beatMs;
     };
-    /** A quick "ooh!" from the whole crowd — unless it's already cheering. */
-    const react = () => {
-      if (scene.time.now < busyUntil + C.reactGapMs) return;
-      cheer(C.reactBeats);
-      if (!calm) burst(5, 500);
+    /** A quick "ooh!" from `team`'s fans (everyone when not given) — unless they're already cheering. */
+    const react = (team) => {
+      if ((team != null ? [team] : [0, 1]).some((t) => clock < busy[t] + C.reactGapMs)) return;
+      cheer(team, C.reactBeats);
+      if (!still) burst(5, 500, team);
     };
     if (bus) {
-      const W2 = W.width;
+      // a strike near the goal a player attacks is a chance for their fans (player 0 attacks the
+      // right-hand goal); clashes and clearances don't count
+      const chance = (e) => (e.player === 0 ? e.x > W.width - C.nearGoal : e.x < C.nearGoal);
       const offs = [
-        // a strike near either goal: chance! (clashes and taps in midfield don't count)
-        bus.on('KICK', (e) => e.kind !== 'clash' && (e.x < 330 || e.x > W2 - 330) && react()),
-        bus.on('SUPER_FIRED', () => react()),
+        bus.on('KICK', (e) => e.kind !== 'clash' && chance(e) && react(e.player)),
+        bus.on('SUPER_FIRED', (e) => react(e.player)),
       ];
       scene.events.once('shutdown', () => offs.forEach((off) => typeof off === 'function' && off()));
     }
 
     return {
       layers,
-      /** Goal celebration: the whole crowd cheers, cameras flashing all over the stands. */
-      cheer() {
-        cheer(C.goalBeats);
-        if (!calm) burst(C.goalFlashes, C.goalBeats * C.beatMs);
+      /** A goal (or a win) for `team`: their fans cheer and wave, cameras flash on their side; the rest stay put. */
+      cheer(team) {
+        cheer(team, C.goalBeats, true);
+        if (!still) burst(C.goalFlashes, C.goalBeats * beatMs, team);
       },
       react,
       update(camX) {
         if (!parallax) return;
-        // objects already scroll 1:1 with the camera; shift textures back so far layers drift slower
-        for (const l of [layers.sky, ...all(), layers.pitch]) if (l && l.factor < 1) l.tilePositionX = (-camX * (1 - l.factor)) / l.scaleX + (l.tileBase || 0);
+        // far layers drift by (1 − factor) of the drift; the fans and flags stay put.
+        // The layer itself moves (its margin covers the drift) rather than its tiled texture: shifting
+        // tilePosition made the Canvas renderer repaint and re-upload these screen-wide strips every frame
+        for (const l of [layers.sky, layers.stands, layers.fence, layers.pitch]) {
+          if (!l || l.factor >= 1) continue;
+          l.baseX ??= l.x;
+          l.x = l.baseX + camX * (1 - l.factor);
+          if (l.cap) l.cap.x = l.x;
+        }
       },
     };
   },
