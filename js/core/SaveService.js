@@ -9,7 +9,6 @@ window.KL = window.KL || {};
     music: 0.5,
     sfx: 0.9,
     crowd: 0.8, // the crowd and the stadium's ambience
-    voice: 0.9, // the legends' shouts and the announcer
     commentary: true,
     screenShake: true,
     locale: 'en',

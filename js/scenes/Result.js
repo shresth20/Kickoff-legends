@@ -105,7 +105,6 @@ KL.ResultScene = class ResultScene extends Phaser.Scene {
     if (bannerKey !== 'draw') A?.play(bannerKey === 'win' ? 'jingle_win' : 'jingle_lose');
     A?.playMusic({ win: 'victory', lose: 'defeat', draw: 'menu' }[bannerKey], { delay: bannerKey === 'draw' ? 0.3 : 2.3 });
     A?.crowd?.react('applause', { dur: 6, gain: 0.5 });
-    if (w !== null) A?.voices?.say(defs[w].id, w === 0 ? 'cheer' : 'ready', { x: w === 0 ? 175 : W.width - 175, delay: 0.5, gain: 0.8 });
     KL.fadeIn(this);
   }
 };

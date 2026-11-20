@@ -44,6 +44,7 @@ KL.VERSION = '2.0.0';
   const start = () => {
     KL.game = new Phaser.Game(config);
     V.attach(KL.game); // follow resizes, rotations and full screen
+    KL.Activity.attach(KL.game); // the player away (tab hidden, window not in front, idle): everything rests
     KL.audio = new KL.Audio(KL.game);
     KL.Motion.trackRefresh(KL.game); // the match steps its physics at the screen's refresh rate
   };

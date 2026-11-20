@@ -1,15 +1,15 @@
 /* KL.Audio — the game's sound engine. WebAudio only and no files needed: every sound is synthesised
  * (the crowd baked offline once at start-up), so the game stays offline and file:// safe.
  *
- * Mixer: each sound plays on one of six buses — music · sfx · ui · voice · crowd · amb (ambience),
+ * Mixer: each sound plays on one of six buses — music · sfx · ui · voice (the announcer) · crowd · amb,
  * each with its own volume (Settings) — summed through a "muffle" low-pass (the pause menu and the
  * goal slow-mo close it), a glue compressor / limiter and the master volume. UI clicks skip the
  * muffle, so the pause menu stays crisp over the muffled match. A stadium reverb (a generated
  * impulse: open-air by day, longer and lusher under the floodlights) is fed by sends from the crowd,
- * whistle, horns, kicks and voices.
+ * whistle, horns, kicks and the announcer.
  *
- * Parts (js/audio/): Kit (DSP helpers), Sfx (one-shot recipes), Voices (the legends' grunts and
- * shouts), Crowd (the stand: murmur ↔ roar, reactions, chants), Ambience (day birds, gulls timed to
+ * Parts (js/audio/): Kit (DSP helpers), Sfx (one-shot recipes), Crowd (the stand: murmur ↔ roar,
+ * reactions, chants), Ambience (day birds, gulls timed to
  * the sky's flocks, wind; night crickets, floodlight hum, shooting-star shimmer), Music (the sequenced
  * theme, stingers), Commentary (the stadium announcer) and Director (reads a match and drives them).
  *
@@ -33,6 +33,15 @@ KL.Audio = class AudioManager {
     // touchend / click; a context suspended by a hidden tab also comes back this way).
     const wake = () => this.unlock();
     for (const ev of ['pointerdown', 'keydown', 'touchend', 'click']) window.addEventListener(ev, wake, { passive: true });
+    // the player away (KL.Activity: tab hidden, window not in front, idle): every sound rests with the game
+    KL.Activity?.on((active) => {
+      if (!this.ctx) return;
+      if (active) this.ctx.resume?.().catch?.(() => {});
+      else {
+        this.ctx.suspend?.();
+        KL.Commentary.stop();
+      }
+    });
   }
 
   /** The context exists and is running (sounds can be scheduled). */
@@ -45,7 +54,7 @@ KL.Audio = class AudioManager {
 
   unlock() {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended' && !document.hidden) this.ctx.resume?.().catch?.(() => {});
+      if (this.ctx.state === 'suspended' && !document.hidden && KL.Activity?.active !== false) this.ctx.resume?.().catch?.(() => {});
       return;
     }
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -60,7 +69,6 @@ KL.Audio = class AudioManager {
     this.music = new KL.Music(this);
     this.crowd = new KL.Crowd(this);
     this.ambience = new KL.Ambience(this);
-    this.voices = new KL.Voices(this);
     this.applySettings();
     this.setStadium(this.stadium);
     KL.Commentary.prime();
@@ -68,12 +76,7 @@ KL.Audio = class AudioManager {
     // studio samples first (they replace bakes), then the crowd bakes in the background
     this.loadSamples().finally(() => this.crowd.bakeAll());
     this.ticker = setInterval(() => this.tick(), 40);
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        this.ctx.suspend?.();
-        KL.Commentary.stop();
-      } else this.ctx.resume?.().catch?.(() => {});
-    });
+    if (KL.Activity?.active === false) this.ctx.suspend?.();
   }
 
   buildMixer() {
@@ -102,7 +105,7 @@ KL.Audio = class AudioManager {
     set(this.buses.music.gain, (s.music ?? 0.5) * 0.8);
     set(this.buses.sfx.gain, s.sfx ?? 0.9);
     set(this.buses.ui.gain, (s.sfx ?? 0.9) * 0.8);
-    set(this.buses.voice.gain, s.voice ?? 0.9);
+    set(this.buses.voice.gain, 1); // the announcer: on / off in Settings, at the master volume
     set(this.buses.crowd.gain, s.crowd ?? 0.8);
     set(this.buses.amb.gain, (s.crowd ?? 0.8) * 0.85);
     if (s.master === 0 || s.commentary === false) KL.Commentary.stop();

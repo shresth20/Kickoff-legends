@@ -6,7 +6,7 @@
  * the announcer stays quiet rather than mispronounce it. Recorded voice-over named
  * vo_<locale>_<key> (e.g. vo_en_comm_goal.0) in assets/audio/audio.js plays instead, through the
  * stadium reverb. The crowd drops back while the announcer talks; a bigger moment cuts a smaller
- * one off, never the other way round. Settings: "Commentary" on/off, "Voices" volume. */
+ * one off, never the other way round. Settings: "Commentary" on / off; it speaks at the master volume. */
 window.KL = window.KL || {};
 
 (() => {
@@ -28,7 +28,7 @@ window.KL = window.KL || {};
     },
     get on() {
       const s = KL.Save?.settings || {};
-      return s.commentary !== false && (s.master ?? 0.8) > 0 && (s.voice ?? 0.9) > 0;
+      return s.commentary !== false && (s.master ?? 0.8) > 0 && KL.Activity?.active !== false;
     },
 
     /** From the unlocking gesture: load the voice list, and say nothing once (iOS lets later lines speak). */
@@ -111,7 +111,7 @@ window.KL = window.KL || {};
       u.rate = o.rate ?? (o.excited ? 1.14 : 1.04);
       u.pitch = o.pitch ?? (o.excited ? 1.12 : 1);
       const s = KL.Save.settings;
-      u.volume = Math.min(1, (s.master ?? 0.8) * (s.voice ?? 0.9) * 1.15);
+      u.volume = Math.min(1, (s.master ?? 0.8) * 1.05);
       u.onstart = () => KL.audio?.crowd?.duck(true);
       u.onend = u.onerror = () => {
         if (this.utterance === u) this.finished(o, prio);
@@ -120,7 +120,7 @@ window.KL = window.KL || {};
       this.priority = prio;
       this.utterance = u;
       const go = () => {
-        if (this.utterance !== u || KL.audio?.paused) return;
+        if (this.utterance !== u || KL.audio?.paused || KL.Activity?.active === false) return;
         synth().speak(u);
       };
       clearTimeout(this.timer);

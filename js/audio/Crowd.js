@@ -264,6 +264,7 @@ window.KL = window.KL || {};
       const target = this.mode === 'off' ? 0 : K.clamp(base + this.pressure + this.boost, 0, 1);
       // a crowd's mood swells fast and settles slowly
       this.level += (target - this.level) * (1 - Math.exp(-dt / (target > this.level ? 0.25 : 1.2)));
+      if (!Number.isFinite(this.level)) this.level = this.pressure = this.boost = 0;
       const L = KL.Crowd.levels(this.level, this.mode);
       this.murmurG.gain.setTargetAtTime(L.murmur, t, 0.1);
       this.excitedG.gain.setTargetAtTime(L.excited, t, 0.1);

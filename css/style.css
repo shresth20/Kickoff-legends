@@ -179,6 +179,56 @@ body {
   letter-spacing: 0;
 }
 
+/* The player away (KL.Activity): the frozen game dims under a "Paused" card; any key, click or tap
+ * wakes it. Under the rotate screen. */
+#idle {
+  position: fixed;
+  inset: 0;
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: env(safe-area-inset-top, 0px) 24px env(safe-area-inset-bottom, 0px);
+  background: rgba(11, 14, 42, 0.62);
+  text-align: center;
+  cursor: pointer;
+  touch-action: none;
+}
+#idle[hidden] {
+  display: none;
+}
+.idle__card {
+  padding: 22px 40px 26px;
+  border: 5px solid #f5c518;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #2f3a8f 0%, #1c2266 100%);
+  box-shadow: 0 6px 0 #1b1f3b, 0 0 0 4px #1b1f3b, 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+.idle__title {
+  margin: 0 0 8px;
+  font: 400 52px/1 'Bangers', 'Impact', sans-serif;
+  letter-spacing: 0.04em;
+  color: #f5c518;
+  -webkit-text-stroke: 1px #1b1f3b;
+  text-shadow: 0 3px 0 #1b1f3b;
+}
+.idle__hint {
+  margin: 0;
+  font: 700 20px/1.3 'Oswald', sans-serif;
+  color: #fff;
+}
+:lang(hi) .idle__title,
+:lang(hi) .idle__hint {
+  font-family: 'Teko', 'Oswald', sans-serif;
+  letter-spacing: 0;
+}
+:lang(hi) .idle__title {
+  font-size: 58px;
+}
+:lang(hi) .idle__hint {
+  font-size: 26px;
+}
+
 /* Off-screen spans force the webfonts to load before Phaser measures text. */
 .font-preload {
   position: absolute;

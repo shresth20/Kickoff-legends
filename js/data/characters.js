@@ -1,5 +1,4 @@
-/* Kickoff Legends — playable roster. Stats 1..5, each sums to 9 for balance.
- * voice: the legend's shouts (js/audio/Voices.js) — f0 = base pitch in Hz, shift = formant scale (timbre). */
+/* Kickoff Legends — playable roster. Stats 1..5, each sums to 9 for balance. */
 window.KL = window.KL || {};
 
 KL.CHARACTERS = [
@@ -12,7 +11,6 @@ KL.CHARACTERS = [
     kit: { primary: '#E63946', secondary: '#FFFFFF' },
     hair: '#1a1a24',
     superColor: '#FF8C1A',
-    voice: { f0: 132, shift: 1 },
   },
   {
     id: 'char_02',
@@ -23,7 +21,6 @@ KL.CHARACTERS = [
     kit: { primary: '#2B6CF2', secondary: '#FFFFFF' },
     hair: '#2b6cf2',
     superColor: '#3BC9FF',
-    voice: { f0: 188, shift: 1.14 },
   },
   {
     id: 'char_03',
@@ -34,7 +31,6 @@ KL.CHARACTERS = [
     kit: { primary: '#F5C518', secondary: '#111111' },
     hair: '#3dd36a',
     superColor: '#7CFF4A',
-    voice: { f0: 108, shift: 0.93 },
   },
   {
     id: 'char_04',
@@ -45,7 +41,6 @@ KL.CHARACTERS = [
     kit: { primary: '#FFFFFF', secondary: '#7B3FE4' },
     hair: '#f2e7c9',
     superColor: '#C56CFF',
-    voice: { f0: 150, shift: 1.05 },
   },
 ];
 

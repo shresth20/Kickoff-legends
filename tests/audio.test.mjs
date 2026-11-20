@@ -9,10 +9,9 @@ await import('../js/core/I18n.js');
 await import('../js/audio/Kit.js');
 await import('../js/audio/Music.js');
 await import('../js/audio/Crowd.js');
-await import('../js/audio/Voices.js');
 await import('../js/audio/Commentary.js');
 await import('../js/audio/Director.js');
-const { AudioKit: K, SONGS, CHORDS, DRUMS, songAdvance, Crowd, AudioDirector, VOCALS, Commentary, I18n } = globalThis.KL;
+const { AudioKit: K, SONGS, CHORDS, DRUMS, songAdvance, Crowd, AudioDirector, Commentary, I18n } = globalThis.KL;
 
 test('pitch and panning helpers', () => {
   assert.equal(K.midi(69), 440);
@@ -104,20 +103,6 @@ test('pressure builds near a goal, as the clock runs down and in sudden death', 
   assert.ok(P({ secondsLeft: 5 }) > P({ secondsLeft: 14 }), 'the last seconds');
   assert.ok(P({ suddenDeath: true }) > P({}), 'sudden death');
   assert.ok(P({ x: 1270, vx: 900, secondsLeft: 1, suddenDeath: true }) <= 0.7, 'capped');
-});
-
-test('every vocalisation is a well-formed contour that starts and ends silent', () => {
-  for (const [kind, make] of Object.entries(VOCALS)) {
-    const v = make(140);
-    for (const key of ['f0', 'vowels', 'amp']) {
-      const pts = v[key];
-      for (let i = 1; i < pts.length; i++) assert.ok(pts[i][0] > pts[i - 1][0], `${kind}.${key} times rise`);
-      assert.ok(Math.abs(pts[pts.length - 1][0] - v.dur) < 1e-9, `${kind}.${key} ends at dur`);
-    }
-    assert.equal(v.amp[0][1], 0, `${kind} fades in`);
-    assert.equal(v.amp[v.amp.length - 1][1], 0, `${kind} fades out`);
-    for (const [, vowel] of v.vowels) assert.ok(K.VOWELS[vowel], `${kind}: vowel ${vowel}`);
-  }
 });
 
 test('every announcer line exists in every language, with the same placeholders', () => {

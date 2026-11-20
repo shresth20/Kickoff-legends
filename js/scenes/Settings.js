@@ -1,5 +1,4 @@
-/* Settings: a panel in two columns — the volumes (music, sound effects, crowd & ambience, voices) on
- * the left, the announcer on / off, screen shake and language on the right. Each audio row plays a
+/* Settings: a panel in two columns — the volumes (music, sound effects, crowd & ambience) on the left, the announcer on / off, screen shake and language on the right. Each audio row plays a
  * taste of what it controls. Wide and short, so a phone shows it at full thumb size.
  * (Master volume is the speaker button on the main menu; keys are fixed, shown on the on-screen pad.)
  * The panel and everything on it is one group, centred in the screen's safe area and scaled to the
@@ -19,12 +18,12 @@ KL.SettingsScene = class SettingsScene extends Phaser.Scene {
     KL.View.cover(this, 0x0f1230, overlay ? 0.75 : 0.6).setDepth(5);
     // the panel group, laid out around its centre
     const ui = this.add.container(0, 0).setDepth(6);
-    ui.add(new KL.Panel(this, 0, 0, 900, 440, { title: KL.t('settings_title') }));
+    ui.add(new KL.Panel(this, 0, 0, 900, 380, { title: KL.t('settings_title') }));
 
     const s = KL.Save.settings;
     // two columns: labels at lx, widgets from wx; each column fills from the top
     const COLS = [{ lx: -410, wx: -190 }, { lx: 70, wx: 250 }];
-    const ROW0 = -98, ROW_H = 62;
+    const ROW0 = -70, ROW_H = 62;
     const next = [0, 0];
     const row = (col, labelKey, make) => {
       const { lx, wx } = COLS[col];
@@ -44,7 +43,6 @@ KL.SettingsScene = class SettingsScene extends Phaser.Scene {
     };
     const sfxTaste = taste(() => KL.audio?.play('kick_low'), 260);
     const crowdTaste = taste(() => KL.audio?.crowd?.react('cheer', { gain: 0.5 }));
-    const voiceTaste = taste(() => KL.audio?.voices?.say(KL.CHARACTERS[Math.floor(Math.random() * KL.CHARACTERS.length)].id, 'cheer'));
     // muted from the menu's speaker button: moving a slider up brings the sound back
     const volume = (key) => (v) => {
       const patch = { [key]: v };
@@ -62,10 +60,6 @@ KL.SettingsScene = class SettingsScene extends Phaser.Scene {
         volume('crowd')(v);
         crowdTaste();
       })),
-      row(0, 'settings_voice', slider(s.voice ?? 0.9, (v) => {
-        volume('voice')(v);
-        voiceTaste();
-      })),
     ];
     const commentary = row(1, 'settings_commentary', (wx, y) => new KL.Toggle(this, wx + 38, y, s.commentary !== false, (v) => {
       this.apply({ commentary: v });
@@ -81,10 +75,10 @@ KL.SettingsScene = class SettingsScene extends Phaser.Scene {
       this.scene.restart({ from: this.from });
     }, { kind: 'secondary', width: 120, height: 44, fontSize: 18 }));
 
-    const back = new KL.Button(this, 0, 166, KL.t('menu_back'), () => this.back(), { width: 240, height: 56, fontSize: 22 });
+    const back = new KL.Button(this, 0, 136, KL.t('menu_back'), () => this.back(), { width: 240, height: 56, fontSize: 22 });
     ui.add(back);
     KL.View.layout(this, (V) => {
-      const k = Math.min(V.ui, (V.bottom - V.top - 20) / 450, (V.right - V.left - 20) / 910);
+      const k = Math.min(V.ui, (V.bottom - V.top - 20) / 390, (V.right - V.left - 20) / 910);
       ui.setPosition(V.cx, V.cy + 6 * k).setScale(k);
     });
 

@@ -11,9 +11,8 @@
  * Names the game asks for: every recipe in js/audio/Sfx.js (kick_low, kick_long, header, crossbar,
  * whistle_kickoff, goal_horn, ui_click …), crowd_murmur / crowd_excited (seamless loops), crowd_roar,
  * crowd_ooh, crowd_aww, crowd_hey, crowd_boo, crowd_applause (loop), crowd_clap, amb_day / amb_night
- * (loops), music_menu / music_victory / music_defeat / music_tension (loops), voice_<kind> or
- * voice_<charId>_<kind> (effort, big, hup, hurt, cheer, groan, ready) and vo_<locale>_<key>.<n> for
- * the announcer's lines (locales.json comm_*). Use .mp3 or .m4a: Safari can't decode .ogg.
+ * (loops), music_menu / music_victory / music_defeat / music_tension (loops) and vo_<locale>_<key>.<n>
+ * for the announcer's lines (locales.json comm_*). Use .mp3 or .m4a: Safari can't decode .ogg.
  *
  *   npm run audio:build
  */
@@ -42,7 +41,7 @@ if (existsSync(src)) {
     // a file inside a folder named after a sound is one take of that sound
     const parent = rel.length > 1 ? rel.slice(0, -1).join('_') : null;
     const own = rel.join('_');
-    const name = parent && !/^(vo|voice)$/.test(rel[0]) ? parent : own;
+    const name = parent && rel[0] !== 'vo' ? parent : own;
     if (ext === '.ogg' || ext === '.opus') console.warn(`  ${relative(root, file)}: Safari can't decode ${ext} — prefer .mp3 / .m4a`);
     const data = readFileSync(file);
     bytes += data.length;

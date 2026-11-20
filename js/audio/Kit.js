@@ -1,5 +1,5 @@
 /* Audio kit: the DSP building blocks the whole soundscape is made from — noise, envelopes, a formant
- * voice (the legends' shouts and every fan in the crowd), hand-clap kernels and the stadium's reverb
+ * voice (every fan in the crowd), hand-clap kernels and the stadium's reverb
  * impulse. Everything works on a live AudioContext and on an OfflineAudioContext alike (the crowd is
  * baked offline once, then looped). The pure helpers (vowels, pitch, panning, seeded random, the
  * applause synth) touch no WebAudio and are unit-tested (tests/audio.test.mjs). */
@@ -147,8 +147,8 @@ window.KL = window.KL || {};
   /* ------------------------------------------------------------------ the formant voice */
 
   /**
-   * One human voice: a glottal buzz (+ breath) through three vowel formants. Shared by the legends'
-   * grunts and every fan in the baked crowd.
+   * One human voice: a glottal buzz (+ breath) through three vowel formants — each fan in the baked
+   * crowd is one.
    * o = { t, dur, f0: [[dt, Hz], …] pitch contour, vowels: [[dt, 'a'], …], amp: [[dt, level], …],
    *       shift (formant scale, 1 = adult), breath (0…1 noise mix), vib: { rate, depth } (depth: fraction
    *       of f0), bright (low-pass Hz) }

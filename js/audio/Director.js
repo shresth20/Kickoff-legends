@@ -4,7 +4,6 @@
  * - Every strike, bounce, body, crossbar and net sounds where it happens (stereo by x), as hard as it
  *   was hit; the ball whooshes through the air by its speed and the fireball roars; boots patter on
  *   the grass with the run cycle; a charged-up player's flames crackle.
- * - The legends grunt on strikes, hup on headers, cry out when knocked down, roar when they score.
  * - The crowd breathes with the game: it builds as the ball nears a goal (more if it's heading in),
  *   as the clock runs down and in sudden death; a shot at goal makes it draw breath, then a goal
  *   erupts (roar, air horns, applause), a near miss gets an "ooh", a chance blocked an "aww", the
@@ -53,17 +52,13 @@ KL.AudioDirector = class AudioDirector {
     this.offs = [
       on('KICK', (e) => this.kick(e)),
       on('SWING', (e) => A.play('swing', { x: e.x, kind: e.kind, key: e.player })),
-      on('JUMP', (e) => {
-        A.play('jump', { x: e.x });
-        if (Math.random() < 0.3) A.voices.say(p(e.player).def.id, 'hup', { x: e.x, gain: 0.6 });
-      }),
+      on('JUMP', (e) => A.play('jump', { x: e.x })),
       on('LAND', (e) => A.play('land', { x: e.x, impact: e.impact })),
       on('BALL_IMPACT', (e) => this.impact(e)),
       on('FRAME_HIT', (e) => this.frameHit(e)),
       on('HURT', (e) => {
         const v = p(e.player);
         A.play('hurt', { x: v.x });
-        A.voices.say(v.def.id, 'hurt', { x: v.x, delay: 0.03 });
         A.crowd.react('boo', { gain: 0.45, delay: 0.15 });
         A.crowd.react('rise', { gain: 0.3 });
         if (Math.random() < 0.6) C.say('comm_knockdown', {}, { priority: 2, delay: 0.35 });
@@ -76,7 +71,6 @@ KL.AudioDirector = class AudioDirector {
       on('SUPER_FIRED', (e) => {
         const v = p(e.player);
         A.play('super_charge', { x: v.x });
-        A.voices.say(v.def.id, 'big', { x: v.x, delay: 0.3 });
         A.crowd.react('rise', { gain: 0.5 });
       }),
       on('GOAL', (e) => this.goal(e)),
@@ -88,15 +82,11 @@ KL.AudioDirector = class AudioDirector {
   }
 
   kick(e) {
-    const A = this.A, s = this.scene, pl = s.players[e.player];
+    const A = this.A, s = this.scene;
     const v = s.ball?.body?.velocity.length();
     const speed = v === undefined ? 900 : v * this.ballTime;
     const name = { low: 'kick_low', high: 'kick_long', header: 'header', clash: 'kick_clash', super: 'kick_super' }[e.kind] || 'kick_low';
     A.play(name, { x: e.x, power: KL.AudioKit.clamp(speed / 1100, 0.35, 1.4) });
-    const id = pl.def.id;
-    if (e.kind === 'high' && Math.random() < 0.55) A.voices.say(id, 'big', { x: pl.x, gain: 0.75 });
-    else if (e.kind === 'low' && Math.random() < 0.35) A.voices.say(id, 'effort', { x: pl.x, gain: 0.7 });
-    else if (e.kind === 'header' && Math.random() < 0.5) A.voices.say(id, 'hup', { x: pl.x, gain: 0.75 });
     // a strike near the goal its player attacks (as the stand sees it, KL.CROWD.nearGoal): the crowd
     // draws breath, and how the chance ends decides the reaction (see update)
     const W = KL.TUNING.world.width, near = KL.CROWD?.nearGoal ?? 330;
@@ -129,7 +119,7 @@ KL.AudioDirector = class AudioDirector {
 
   goal(e) {
     const A = this.A, s = this.scene, C = KL.Commentary;
-    const scorer = s.players[e.scorer], other = s.players[1 - e.scorer];
+    const scorer = s.players[e.scorer];
     const gx = s.goals[e.scorer === 0 ? 1 : 0].lineX;
     this.shot = null;
     this.golden = !!s.rules.state.suddenDeath;
@@ -139,8 +129,6 @@ KL.AudioDirector = class AudioDirector {
     A.play('goal_horn', { delay: 0.45 });
     A.crowd.react('roar');
     A.play(e.scorer === 0 ? 'sting_goal' : 'sting_concede', { delay: 0.12 });
-    A.voices.say(scorer.def.id, 'cheer', { x: scorer.x, delay: 0.35 });
-    if (Math.random() < 0.7) A.voices.say(other.def.id, 'groan', { x: other.x, delay: 1.1, gain: 0.7 });
     // the announcer: the kind of goal, then what it does to the score
     const kind = s.ball?.lastTouchKind;
     const key = this.golden ? 'comm_golden' : kind === 'super' ? 'comm_goal_super' : kind === 'header' ? 'comm_goal_header' : 'comm_goal';
@@ -191,7 +179,6 @@ KL.AudioDirector = class AudioDirector {
       return;
     }
     A.crowd.react('roar', { delay: 0.6, dur: 7 });
-    A.voices.say(w.def.id, 'cheer', { x: w.x, delay: 0.9 });
     C.say('comm_fulltime_win', { name: w.def.name }, { priority: 4, delay: 1.3, excited: true });
   }
 
@@ -222,6 +209,7 @@ KL.AudioDirector = class AudioDirector {
     const still = s.paused || s.ended;
     const v = ball.body.velocity;
     const speed = still ? 0 : Math.hypot(v.x, v.y) * this.ballTime;
+    if (!Number.isFinite(speed) || !Number.isFinite(ball.x)) return; // a bad physics frame must never take the sound (and the game loop) down
     const air = ball.y < W.groundY - KL.TUNING.ball.radius - 12;
     const k = K.clamp((speed - 600) / 1100, 0, 1);
     this.whooshG.gain.setTargetAtTime(k * k * (air ? 0.34 : 0.12) * (ball.isSuper ? 1.5 : 1), t, 0.04);

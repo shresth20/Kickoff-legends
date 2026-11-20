@@ -166,9 +166,8 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     const def = KL.CHARACTERS[side.index];
     side.preview.play(`${def.id}/${this.ready[i] ? 'celebrate' : 'idle'}`, true);
     if (this.ready[i]) {
-      // locked in: a blade-like "shing", the legend's shout, and the announcer calls their name
+      // locked in: a blade-like "shing", and the announcer calls their name
       KL.audio?.play('ui_confirm', { key: i });
-      KL.audio?.voices?.say(def.id, 'ready', { x: side.cx, delay: 0.08, gain: side.isCpu ? 0.7 : 1 });
       if (!side.isCpu) KL.Commentary?.say('comm_pick', { name: def.name }, { priority: 1, delay: 0.3, excited: true });
     } else KL.audio?.play('ui_back');
     if (i === 0) {

@@ -23,6 +23,10 @@
 <body>
   <div id="game"><noscript id="nojs">Kickoff Legends needs JavaScript to run.</noscript></div>
   <!-- phones / tablets held upright: the game plays in landscape (shown by css/style.css) -->
+  <!-- the player away (window not in front, or idle): the game rests under this card (js/core/Activity.js) -->
+  <div id="idle" role="status" aria-live="polite" hidden>
+    <div class="idle__card"><p class="idle__title">Paused</p><p class="idle__hint">Press any key to carry on</p></div>
+  </div>
   <div id="rotate" role="alert">
     <div class="rotate__icon" aria-hidden="true"><div class="rotate__phone"></div></div>
     <p class="rotate__text">Rotate your device</p>
@@ -50,6 +54,7 @@
   <script src="js/core/Viewport.js"></script>
   <script src="js/core/HiDPI.js"></script>
   <script src="js/core/Motion.js"></script>
+  <script src="js/core/Activity.js"></script>
   <script src="js/core/SaveService.js"></script>
   <script src="js/core/Placeholders.js"></script>
   <!-- audio: synthesised (js/audio/Engine.js); studio samples, if built, from assets/audio/audio.js -->
@@ -60,7 +65,6 @@
   <script src="js/audio/Music.js"></script>
   <script src="js/audio/Crowd.js"></script>
   <script src="js/audio/Ambience.js"></script>
-  <script src="js/audio/Voices.js"></script>
   <script src="js/audio/Commentary.js"></script>
   <script src="js/audio/Director.js"></script>
   <script src="js/core/FXLayer.js"></script>
