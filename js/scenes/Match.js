@@ -118,13 +118,31 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
 
   kickoff(first) {
     const W = KL.TUNING.world;
+    const B = KL.TUNING.ball;
     this.players[0].resetTo(W.width * 0.3);
     this.players[1].resetTo(W.width * 0.7);
-    this.ball.resetTo(W.width / 2, W.groundY - 220);
+    // the ball waits hidden behind the HUD's timer crest (placed like the crest: from the top of the view,
+    // scaled up on a phone) and drops out from under it at the whistle
+    const SB = KL.HUD_SCOREBOARD, V = KL.View;
+    const hs = SB && V ? 1 + (V.ui - 1) * SB.phoneScale : 1;
+    this.ball.resetTo(W.width / 2, (V?.top ?? 0) + B.serve.dropY * hs);
+    this.ball.hold(true);
     this.squirting = false;
     this.players.forEach((p) => (p.frozen = true));
     if (!first) this.rules.state.phase = 'countdown';
     this.countdownShown = false;
+  }
+
+  /**
+   * The whistle: the waiting ball drops in — straight down at the first kickoff and in sudden death;
+   * after a goal it drifts towards the player who conceded (player 0 defends the left goal), so it comes
+   * down in their half and they get the first go at it.
+   */
+  serveBall() {
+    const S = KL.TUNING.ball.serve;
+    const to = this.serveTo ?? null;
+    const dir = to === null ? 0 : to === 0 ? -1 : 1;
+    this.ball.serve(dir * S.serveVx * Phaser.Math.FloatBetween(1 - S.serveJitter, 1 + S.serveJitter));
   }
 
   togglePause() {
@@ -184,6 +202,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     for (const ev of this.rules.tick(delta)) {
       if (ev.type === 'kickoff') {
         this.players.forEach((p) => (p.frozen = false));
+        this.serveBall();
         this.bus.emit('WHISTLE', { reason: 'kickoff' });
       } else if (ev.type === 'reset') {
         this.kickoff(false);
@@ -191,6 +210,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
         this.bus.emit('CLOCK', { secondsLeft: ev.secondsLeft, suddenDeath: this.rules.state.suddenDeath });
         if (ev.secondsLeft <= 3 && ev.secondsLeft > 0) KL.audio?.play('countdown');
       } else if (ev.type === 'suddendeath') {
+        this.serveTo = null; // a neutral drop for the golden goal
         this.kickoff(false);
         this.rules.state.phase = 'suddendeath_countdown';
         this.bus.emit('WHISTLE', { reason: 'suddendeath' });
@@ -220,7 +240,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     const G = KL.TUNING.goal;
     if (this.ball.body.blocked.down && this.ball.y < W.groundY - G.openingHeight) {
       const toField = this.ball.x < W.width / 2 ? 1 : -1;
-      if (this.ball.body.velocity.x * toField < 140) this.ball.body.velocity.x = toField * 140;
+      if (this.ball.body.velocity.x * toField < G.barRollOff) this.ball.body.velocity.x = toField * G.barRollOff;
     }
 
     // goals
@@ -332,11 +352,23 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
       d = 1;
       pen = cy - top + r;
     } else pen = r - d;
-    const n = { x: dx / d, y: dy / d };
+    let n = { x: dx / d, y: dy / d };
+    const underFeet = n.y > 0.6;
+    if (underFeet && bb.bottom >= T.world.groundY - 6) {
+      // stepped on (a player coming down on a ball on the turf): it squirts out from under the boots,
+      // never driven into the turf — the floor would fire it back up at the landing speed
+      const side = Math.sign(cx - (left + right) / 2) || -p.facing;
+      n = { x: side, y: 0 };
+      pen = side > 0 ? right - (cx - r) : cx + r - left;
+    }
     bb.position.x += n.x * pen;
     bb.position.y += n.y * pen;
     const B = T.body;
-    const rvx = bb.velocity.x - pb.velocity.x, rvy = bb.velocity.y - pb.velocity.y;
+    // the body's own motion as the ball feels it: the ball plays on a stretched clock (KL.TUNING.ball.time)
+    // and the players don't, so a run is felt in ball time and a jump only in part (feelX / feelY) —
+    // else a player jumping into a dropping ball sent it out of the stadium
+    const pvx = pb.velocity.x * B.feelX, pvy = pb.velocity.y * B.feelY;
+    const rvx = bb.velocity.x - pvx, rvy = bb.velocity.y - pvy;
     const vn = rvx * n.x + rvy * n.y;
     const onHead = n.y < -0.6;
     if (vn < 0) {
@@ -345,18 +377,33 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
       bb.velocity.x -= (1 + e) * vn * n.x;
       bb.velocity.y -= (1 + e) * vn * n.y;
       if (!onHead) {
-        const cap = Math.max(B.sideMaxSpeed, Math.abs(pb.velocity.x) * 1.25);
+        const cap = Math.max(B.sideMaxSpeed, Math.abs(pvx) * 1.25);
         bb.velocity.x = Phaser.Math.Clamp(bb.velocity.x, -cap, cap);
       }
+      // a body (not a strike) never sends it faster than this
+      const sp = Math.hypot(bb.velocity.x, bb.velocity.y);
+      if (sp > B.maxLaunch) (bb.velocity.x *= B.maxLaunch / sp), (bb.velocity.y *= B.maxLaunch / sp);
     }
-    // a running player dribbles it: the ball rolls just ahead at the runner's pace (set, never accumulated)
-    // only when running forward (towards the opponent's goal); backpedalling into it just blocks it
+    // stamped down out of the air: it bounces up off the turf, not into orbit
+    if (n.y > 0.6) bb.velocity.y = Math.min(bb.velocity.y, B.stompMax);
+    // a running player dribbles it: the ball goes just ahead at the runner's pace (set, never accumulated)
+    // only when running forward (towards the opponent's goal); backpedalling into it just blocks it.
+    // On the turf each touch pokes it up into a little hop (higher the faster the run, never quite the
+    // same twice), so a dribble goes hop-hop-hop up the pitch instead of shoving a flat ball along
     if (Math.abs(n.x) > 0.5 && Math.sign(pb.velocity.x) === Math.sign(n.x) && Math.sign(pb.velocity.x) === p.facing) {
       const push = pb.velocity.x * (1 + B.carryX * 0.3);
-      if (Math.abs(bb.velocity.x) < Math.abs(push)) bb.velocity.x = push;
+      if (Math.abs(bb.velocity.x) < Math.abs(push)) {
+        bb.velocity.x = push;
+        const onTurf = bb.blocked.down && Math.abs(bb.velocity.y) < T.ball.turf.bounceMinVy;
+        if (onTurf) {
+          const pace = Phaser.Math.Clamp(Math.abs(pb.velocity.x) / T.player.runSpeed, 0.35, 1.15);
+          bb.velocity.y = -B.dribblePop * pace * Phaser.Math.FloatBetween(1 - B.dribbleJitter, 1 + B.dribbleJitter);
+          ball.omega = push / ball.visR; // it leaves the boot rolling forward
+        }
+      }
     }
     if (onHead && bb.velocity.y > -B.headPop) bb.velocity.y = Math.min(bb.velocity.y, -B.headPop); // juggle off the head
-    if (Math.abs(vn) > 160 && this.time.now - (this._lastBodySfx || 0) > 120) {
+    if (Math.abs(vn) > B.sfxMin && this.time.now - (this._lastBodySfx || 0) > 120) {
       this._lastBodySfx = this.time.now;
       KL.audio?.play('bump');
     }
@@ -365,6 +412,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
 
   onGoal(scorer, goalIdx) {
     if (!this.rules.goal(scorer)) return;
+    this.serveTo = 1 - scorer; // the restart's ball is served to whoever conceded
     this.goals[goalIdx].shake();
     this.players.forEach((p) => (p.frozen = true));
     this.players[scorer].celebrate(); // locked in the pose until the next kickoff

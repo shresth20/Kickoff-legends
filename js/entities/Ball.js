@@ -1,6 +1,7 @@
 /* The ball.
  *
- * Physics: an Arcade circle body (gravity, bounces off the turf, posts, bar and walls); after every fixed
+ * Physics: an Arcade circle body (its own floaty gravity, KL.TUNING.ball.gravity, under the players'
+ * stronger world gravity; bounces off the turf, posts, bar and walls); after every fixed
  * physics step js/systems/BallPhysics.js adds what Arcade doesn't know — air drag, the swerve of its spin
  * (topspin dips a drive, backspin floats a long ball), rolling resistance and the skid of each bounce.
  * The spin (`omega`) is that physical spin, and the rig below shows it. The physics sprite itself is
@@ -36,6 +37,9 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     this.body.setBounce(T.bounce, T.bounce);
     this.body.setCollideWorldBounds(true, T.bounce, T.bounce);
     this.body.setMaxVelocity(T.maxSpeed, T.maxSpeed);
+    // the ball falls under its own (floaty) gravity: Arcade adds a body's gravity to the world's
+    this.body.setGravityY((T.gravity ?? KL.TUNING.world.gravity) - KL.TUNING.world.gravity);
+    this.held = false; // waiting above the stadium for the whistle (see hold)
     this.setAlpha(0); // the rig below draws the ball
 
     if (!scene.anims.exists('ball_super')) {
@@ -124,6 +128,21 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     this.history.length = 0;
   }
 
+  /** Held: the ball hangs where it was placed (above the stadium) until released, then falls in. */
+  hold(on) {
+    this.held = on;
+    this.body.setAllowGravity(!on);
+    if (on) this.body.setVelocity(0, 0);
+  }
+
+  /** Released at the whistle: drops in from where it waits, drifting at vx (0 = straight down). */
+  serve(vx) {
+    this.hold(false);
+    this.body.setVelocity(vx, 0);
+    this.prevVx = vx; // a serve isn't an impact: no squash
+    this.prevVy = 0;
+  }
+
   /**
    * A boot or a head strikes the ball. shot = { vx, vy, omega } from KL.BallPhysics.launch; kind: low |
    * high | header | super. Returns the kind that happened: 'clash' when the other player struck the same
@@ -174,7 +193,7 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
     this.deformAxis = Math.atan2(dvy, dvx);
     this.contactX = dvx / dv;
     this.contactY = dvy / dv;
-    if (dv > 400) this.omega *= 0.7; // a hard knock scrubs some spin off
+    if (dv > M.scrubDv) this.omega *= 0.7; // a hard knock scrubs some spin off
   }
 
   nudge(dir, amount) {
@@ -235,7 +254,7 @@ KL.Ball = class Ball extends Phaser.Physics.Arcade.Sprite {
   preUpdate(time, delta) {
     super.preUpdate(time, delta);
     // (drag, spin and turf act per physics step: physicsStep, so a hit-stop or the pause menu costs no pace)
-    if (this.superMode && this.body.velocity.length() < 250) this.setSuper(false); // the fireball burns out
+    if (this.superMode && this.body.velocity.length() < KL.TUNING.ball.superBurnout) this.setSuper(false); // the fireball burns out
   }
 
   /** Runs on the scene's PRE_RENDER: physics has stepped, so this is where the ball really is. */

@@ -4,7 +4,9 @@
  * Motion: the run speed ramps up and brakes (KL.TUNING.player.runAccel / runDecel) instead of
  * snapping between 0 and full speed, and the run cycle plays at the real ground speed. On top of the
  * sprite frames a light "pose" layer adds weight: a stretch on take-off, a squash on landing that
- * grows with the fall, a lean into starts and stops, and a recoil tilt when hit. The pose is applied
+ * grows with the fall, a lean into starts and stops, a recoil tilt when hit, and a whole-body swing
+ * through every strike (rocked back on the wind-up, whipped forward at the contact; a header nods
+ * into the ball — swingBody). The pose is applied
  * only for the render pass (PRE_RENDER → RENDER) and undone right after, because scaling an Arcade
  * sprite would also resize its body — the hitbox never changes. Feel numbers: KL.TUNING.motion.player.
  *
@@ -85,6 +87,8 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.baseScaleY = this.scaleY;
     this.pose = new KL.Motion.Spring(PM.spring.hz, PM.spring.damping); // + squash / − stretch
     this.tilt = new KL.Motion.Spring(PM.tiltSpring.hz, PM.tiltSpring.damping); // recoil, radians
+    this.whip = new KL.Motion.Spring(PM.whipSpring.hz, PM.whipSpring.damping); // a strike's body swing, radians
+    this.whipDone = true; // this strike's forward whip has been given (see swingBody)
     this.lean = 0;
     this.prevVx = 0;
     this.fallVy = 0; // fastest fall of the current jump (sizes the landing squash)
@@ -101,7 +105,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     if (!this.body) return;
     const q = this.pose.x;
     this.setScale(this.baseScaleX * (1 + q * KL.TUNING.motion.player.widen), this.baseScaleY * (1 - q));
-    this.rotation = this.lean + this.tilt.x;
+    this.rotation = this.lean + this.tilt.x + this.whip.x;
     const S = KL.TUNING.player.scale;
     if (this.aura.visible) this.aura.setPosition(this.x, this.y - 95 * S);
     if (this.sprintLines.visible) this.sprintLines.setPosition(this.x - this.sprintDir * 110 * S, this.y - 80 * S);
@@ -134,6 +138,25 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.lean = KL.Motion.damp(this.lean, target, PM.leanRate, dt);
     this.pose.step(dt);
     this.tilt.step(dt);
+    this.whip.step(dt);
+  }
+
+  /**
+   * The body swings through a strike (look only, about the feet): rocked back on the wind-up, then
+   * whipped forward through the contact so it peaks at about `deg` and settles — the whole-body follow-
+   * through that sells a kick, on top of the sprite's leg swing. phase: 'windup' | 'whip'.
+   */
+  swingBody(phase, deg) {
+    const DEG = Math.PI / 180, s = this.whip;
+    if (phase === 'windup') {
+      s.x = -this.facing * deg * DEG;
+      s.v = 0;
+      return;
+    }
+    // the push that makes a resting spring peak at deg: its first peak per unit of starting velocity
+    const z = s.z, wd = s.w * Math.sqrt(1 - z * z), tp = Math.atan2(Math.sqrt(1 - z * z), z) / wd;
+    const k = (Math.exp(-z * s.w * tp) * Math.sin(wd * tp)) / wd;
+    s.v += (this.facing * deg * DEG) / k;
   }
 
   ensureAnims() {
@@ -173,6 +196,8 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.hideAura(false);
     this.pose.reset();
     this.tilt.reset();
+    this.whip.reset();
+    this.whipDone = true;
     this.lean = 0;
     this.prevVx = 0;
     this.fallVy = 0;
@@ -275,6 +300,14 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.runUp = this.body.velocity.x;
     if (kind === 'low') this.setState('kick_low');
     else this.setState(this.onFloor ? 'kick_high' : 'header');
+    const PM = KL.TUNING.motion.player;
+    if (this.state === 'header') {
+      this.swingBody('whip', PM.headerNodDeg); // a nod straight into it
+      this.whipDone = true;
+    } else {
+      this.swingBody('windup', PM.kickBackDeg); // rock back; the whip comes with the contact frame (step)
+      this.whipDone = false;
+    }
   }
 
   /** A hit-stop froze the world for `ms`: the action clocks wait with it, so no strike is cut short. */
@@ -370,6 +403,11 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     if (wantKick && !hurting && !acting && this.superCharging === 0) this.startKick(wantKick);
 
     this.resolveHit(ball, now);
+    // the body whips forward as the boot comes through the ball's spot (hit or miss)
+    if (!this.whipDone && (this.state === 'kick_low' || this.state === 'kick_high') && this.frameIndex >= this.stateDef.hitFrames[0]) {
+      this.whipDone = true;
+      this.swingBody('whip', PM.kickWhipDeg);
+    }
 
     if (this.onFloor && !this.wasOnFloor && !hurting) {
       if (this.state === 'jump' || this.state === 'header') this.setState('land');
@@ -403,7 +441,9 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (!this.isActing && !this.locked && this.scene.physics.overlap(this, ball)) {
       const dir = ball.x >= this.x ? 1 : -1;
-      if (Math.abs(ball.body.velocity.x) < 80) ball.nudge(dir, P.bumpNudge);
+      // (not a ball already rising off it: a nudge every frame stacked up into a launch, worst of all for
+      // a ball pinched between both bodies)
+      if (Math.abs(ball.body.velocity.x) < P.bumpBelow && ball.body.velocity.y >= 0) ball.nudge(dir, P.bumpNudge);
     }
 
     // (the aura and the sprint lines are placed in applyPose, once the body has moved)
