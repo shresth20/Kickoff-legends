@@ -192,7 +192,6 @@ window.KL = window.KL || {};
     full: { kick: [0, 4, 8, 12], clap: [4, 12], snare: [4, 12], hat: [0, 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15], open: [2, 6, 10, 14] },
     hats: { hat: [2, 6, 10, 14], kick: [0] },
     heartbeat: { kick: [0, 3], hat: [8] },
-    march: { kick: [0, 8], snare: [4, 12, 14], hat: [0, 2, 4, 6, 8, 10, 12, 14] },
   };
 
   // melodies: per bar, [midi | null (rest), length in 16ths] — each bar sums to 16

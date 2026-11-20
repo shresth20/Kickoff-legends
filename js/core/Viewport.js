@@ -171,7 +171,7 @@ window.KL = window.KL || {};
         }
         if (!changed) return;
         game.scale.scaleMode = this.scaleMode();
-        game.scale.setGameSize(Math.round(this.w * KL.RES), Math.round(this.h * KL.RES));
+        game.scale.setGameSize(Math.round(this.w * KL.RENDER), Math.round(this.h * KL.RENDER));
         this.events.emit('change', this);
       };
       const schedule = () => {

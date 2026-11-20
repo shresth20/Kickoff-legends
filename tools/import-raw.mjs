@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 /**
- * Copies the ChatGPT downloads into assets/image/ (RAW_DIR) and reports what is missing.
+ * Copies the ChatGPT downloads into assets/source/ (RAW_DIR) and reports what is missing.
  *   node tools/import-raw.mjs [sourceDir]      (default: ~/Downloads)
  * Files are expected to already carry their canonical names (char_01_idle.png …);
- * "name (1).png" duplicates are tolerated — the newest copy wins.
+ * "name (1).png" duplicates are tolerated — the newest copy wins. A copy lands in the top of
+ * assets/source/, where it wins over the same sheet filed in a sub-folder (characters/, ui/ …).
  */
-import { readdirSync, statSync, copyFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readdirSync, statSync, copyFileSync, mkdirSync } from 'node:fs';
 import { resolve, join, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
-import { ASSETS, RAW_DIR } from './manifest.mjs';
+import { ASSETS, RAW_DIR, rawFile } from './manifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const src = resolve(process.argv[2] || join(homedir(), 'Downloads'));
@@ -32,7 +33,7 @@ let copied = 0;
 const missing = [];
 for (const [name, hit] of wanted) {
   if (!hit) {
-    if (!existsSync(join(dst, `${name}.png`))) missing.push(name);
+    if (!rawFile(name)) missing.push(name);
     continue;
   }
   copyFileSync(hit.path, join(dst, `${name}.png`));

@@ -83,10 +83,18 @@ window.KL = window.KL || {};
       this.follow = new Map(); // effect root → () => its transform this frame (tracks a player)
       this.speed = [];
       this.rate = 1;
+      this.retimed = -Infinity; // when the animations were last re-timed (see sync)
       this.k = 1;
       this.layoutKey = '';
       this.camKey = '';
       this.veil = 0;
+      // window resizes, counted (see sync): reading window.innerWidth there instead forced a style and
+      // layout pass in the middle of every frame
+      this.resizes = 0;
+      this.onResize = () => this.resizes++;
+      window.addEventListener('resize', this.onResize);
+      window.visualViewport?.addEventListener('resize', this.onResize);
+      KL.View.events.on('change', this.onResize);
 
       // the sprite version of the sprint lines keeps running (its visibility is the state) but is not
       // drawn: this layer draws them
@@ -166,9 +174,11 @@ window.KL = window.KL || {};
       const cam = sc.cameras?.main;
       if (!cam) return;
 
-      // re-measured only when the canvas or the window changed size
+      // re-measured only when the canvas or the window changed size. Both are read without touching
+      // layout: the canvas's inline style (Phaser sets its size and centring there) and a count of
+      // resize events
       const cs = this.canvas.style;
-      const key = `${cs.width}|${cs.height}|${cs.marginLeft}|${cs.marginTop}|${window.innerWidth}|${window.innerHeight}`;
+      const key = `${cs.width}|${cs.height}|${cs.marginLeft}|${cs.marginTop}|${this.resizes}`;
       if (key !== this.layoutKey) {
         this.layoutKey = key;
         this.layout();
@@ -198,12 +208,18 @@ window.KL = window.KL || {};
       }
 
       // goal slow-mo and the hit-stop dip: every CSS animation runs at the game's speed, at the look-only
-      // pace (KL.TUNING.motion.animPace). Rounded to 1/40 steps, so an easing speed re-times the
-      // animations a few times rather than on every frame
-      const rate = Math.max(0.025, Math.round((sc.time?.timeScale ?? 1) * KL.animPace() * 40) / 40);
+      // pace (KL.TUNING.motion.animPace). An easing speed (every strike's hit-stop dip, the goal
+      // slow-mo) re-times them in 1/20 steps and at most every 100 ms, not on every frame: each re-time
+      // walks every animation in the layer (hundreds, under goal confetti) and hands it back to the
+      // compositor. Back to full speed is applied at once.
+      const rate = Math.max(0.05, Math.round((sc.time?.timeScale ?? 1) * KL.animPace() * 20) / 20);
       if (rate !== this.rate) {
-        this.rate = rate;
-        this.applyRate(this.root);
+        const now = performance.now();
+        if (rate === 1 || !(now - this.retimed < 100)) {
+          this.rate = rate;
+          this.retimed = now;
+          this.applyRate(this.root);
+        }
       }
 
       this.trackPlayers();
@@ -323,6 +339,9 @@ window.KL = window.KL || {};
 
     destroy() {
       this.scene.game.events.off(Phaser.Core.Events.POST_RENDER, this.sync, this);
+      window.removeEventListener('resize', this.onResize);
+      window.visualViewport?.removeEventListener('resize', this.onResize);
+      KL.View.events.off('change', this.onResize);
       this.root.removeEventListener('animationend', this.onEnd);
       this.world.textContent = '';
       this.screen.textContent = '';

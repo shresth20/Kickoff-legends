@@ -8,8 +8,7 @@ window.KL = window.KL || {};
     master: 0.8,
     music: 0.5,
     sfx: 0.9,
-    crowd: 0.8, // the crowd and the stadium's ambience
-    commentary: true,
+    crowd: 0.25, // the crowd and the stadium's ambience
     screenShake: true,
     locale: 'en',
     controls: {

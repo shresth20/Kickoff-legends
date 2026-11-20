@@ -360,6 +360,10 @@ KL.Stadium = {
     const big = (texKey, band, depth) => {
       if (!has(texKey)) return null;
       const src = scene.textures.get(texKey).getSourceImage();
+      // Always the whole image ('__BASE'): once the sky's 'kl:cap' frame (below) has been added to the
+      // texture, Phaser makes it the texture's default frame, so a later stadium asking for no frame
+      // would get that 2 px strip and the sky would vanish from every screen after the first
+      const WHOLE = '__BASE';
       let img;
       if (band.fit === 'width') {
         // band.width px wide (default: the design width), centred on the design area, its top at
@@ -367,24 +371,29 @@ KL.Stadium = {
         // of the widest view (the field's markings stop well inside its edges, so no mirrored line shows)
         const s = (band.width ?? W.width) / src.width, w = src.width * s, left = (W.width - w) / 2;
         const top = band.top ?? W.height - src.height * s;
-        img = scene.add.image(left, top, texKey).setOrigin(0, 0).setScale(s);
-        for (const [x, ox] of [[left, 1], [left + w, 0]]) scene.add.image(x, top, texKey).setOrigin(ox, 0).setScale(s).setFlipX(true).setDepth(depth);
+        img = scene.add.image(left, top, texKey, WHOLE).setOrigin(0, 0).setScale(s);
+        for (const [x, ox] of [[left, 1], [left + w, 0]]) scene.add.image(x, top, texKey, WHOLE).setOrigin(ox, 0).setScale(s).setFlipX(true).setDepth(depth);
         img.setDepth(depth);
         img.factor = band.factor;
         img.baseX = img.x;
         img.baseY = top;
         return img;
       }
+      // Plain images, never TileSprites, for art that doesn't repeat: in WebGL every TileSprite copies
+      // its texture into a new power-of-two canvas and uploads that, each time a scene builds a
+      // stadium — 16 MB and a fresh decode of the sky art for the sky alone, a stall at every screen
       if (band.fit === 'stretch') {
-        img = scene.add.tileSprite(-M, band.top, src.width, src.height, texKey).setOrigin(0, 0);
-        img.setScale(span / src.width, band.height / src.height);
+        img = scene.add.image(-M, band.top, texKey, WHOLE).setOrigin(0, 0).setScale(span / src.width, band.height / src.height);
       } else {
+        // 'cover': one uniform scale that spans the view and its parallax margin and fills the band
         const s = Math.max(span / src.width, band.height / src.height);
-        img = scene.add.tileSprite(-M, band.top, Math.ceil(span / s) + 2, src.height, texKey).setOrigin(0, 0).setScale(s);
+        img = scene.add.image(-M, band.top, texKey, WHOLE).setOrigin(0, 0).setScale(s);
         if (band.capTo != null && band.capTo < band.top) {
           // the top two rows of the texture stretched up to capTo (a flat band of the sky's top
           // colour), tucked one px under the sky; it drifts with it
-          img.cap = scene.add.tileSprite(-M, band.top + 1, img.width, 2, texKey).setOrigin(0, 1).setScale(s, (band.top + 1 - band.capTo) / 2).setDepth(depth);
+          const tex = scene.textures.get(texKey);
+          if (!tex.has('kl:cap')) tex.add('kl:cap', 0, 0, 0, src.width, 2);
+          img.cap = scene.add.image(-M, band.top + 1, texKey, 'kl:cap').setOrigin(0, 1).setScale(s, (band.top + 1 - band.capTo) / 2).setDepth(depth);
         }
       }
       img.setDepth(depth);

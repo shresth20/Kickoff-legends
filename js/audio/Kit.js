@@ -14,10 +14,8 @@ window.KL = window.KL || {};
     a: { f: [730, 1090, 2440], g: [1, 0.5, 0.22] }, // "ah"  (father)
     ae: { f: [660, 1720, 2410], g: [1, 0.5, 0.25] }, // "a"   (bat — the "yeah" of a cheer)
     e: { f: [530, 1840, 2480], g: [1, 0.42, 0.28] }, // "eh"  (hey)
-    i: { f: [270, 2290, 3010], g: [1, 0.3, 0.22] }, // "ee"
     o: { f: [570, 840, 2410], g: [1, 0.55, 0.18] }, // "oh / aw"
     u: { f: [300, 870, 2240], g: [1, 0.32, 0.1] }, // "oo"
-    uh: { f: [640, 1190, 2390], g: [1, 0.48, 0.2] }, // "uh"  (grunts)
   };
   const FORMANT_Q = [7, 10, 14]; // bandwidths ≈ 90 / 110 / 170 Hz
   // narrow band-passes pass little of the buzz: make the level back up (more on the upper formants)
@@ -332,25 +330,6 @@ window.KL = window.KL || {};
     return buf;
   }
 
-  /** Turn a buffer rendered `fade` s longer than wanted into a seamless loop: its tail crossfades into its head. */
-  function loopify(c, buf, fade) {
-    const sr = buf.sampleRate;
-    const F = Math.floor(fade * sr);
-    const len = buf.length - F;
-    const out = c.createBuffer(buf.numberOfChannels, len, sr);
-    for (let ch = 0; ch < buf.numberOfChannels; ch++) {
-      const src = buf.getChannelData(ch);
-      const dst = out.getChannelData(ch);
-      dst.set(src.subarray(0, len));
-      for (let i = 0; i < F; i++) {
-        const k = i / F;
-        // equal-power crossfade: no dip in the middle of the seam
-        dst[i] = src[i] * Math.sin((k * Math.PI) / 2) + src[len + i] * Math.cos((k * Math.PI) / 2);
-      }
-    }
-    return out;
-  }
-
   /** Render `build(oc, destination)` offline into an AudioBuffer (promise and old callback APIs). */
   function bake(sec, build, { channels = 2, sampleRate = 32000 } = {}) {
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
@@ -371,8 +350,6 @@ window.KL = window.KL || {};
 
   KL.AudioKit = {
     VOWELS,
-    FORMANT_Q,
-    FORMANT_MAKE,
     clamp,
     rand,
     pick,
@@ -397,7 +374,6 @@ window.KL = window.KL || {};
     normalise,
     toBuffer,
     impulse,
-    loopify,
     bake,
   };
 })();

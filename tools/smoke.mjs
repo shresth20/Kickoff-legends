@@ -41,7 +41,7 @@ const waitScene = async (key, ms = 8000) => {
 };
 
 await waitScene('Boot');
-await page.waitForTimeout(800);
+await page.waitForFunction(() => KL.game.scene.getScene('Boot').ready); // loaded: "Tap to start"
 await shot('01-boot');
 await page.mouse.click(640, 360);
 await waitScene('Menu');

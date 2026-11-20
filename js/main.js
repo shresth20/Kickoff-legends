@@ -6,14 +6,14 @@ KL.VERSION = '2.0.0';
 (() => {
   KL.I18n.set(KL.Save.settings.locale || 'en');
   const V = KL.View; // the view: 1280×720 grown to the screen's shape (js/core/Viewport.js)
-  const gameW = Math.round(V.w * KL.RES), gameH = Math.round(V.h * KL.RES);
+  const gameW = Math.round(V.w * KL.RENDER), gameH = Math.round(V.h * KL.RENDER);
 
   const params = new URLSearchParams(location.search);
   const config = {
     // file:// images count as cross-origin for WebGL in Chrome, so a double-clicked index.html uses Canvas
     type: params.get('renderer') === 'canvas' || location.protocol === 'file:' ? Phaser.CANVAS : Phaser.AUTO,
     parent: 'game',
-    // the canvas is KL.RES × the view's logical size; HiDPIPlugin zooms every camera to match
+    // the canvas is KL.RENDER × the view's logical size; HiDPIPlugin zooms every camera to match
     width: gameW,
     height: gameH,
     backgroundColor: '#0f1230',
@@ -47,6 +47,7 @@ KL.VERSION = '2.0.0';
     KL.Activity.attach(KL.game); // the player away (tab hidden, window not in front, idle): everything rests
     KL.audio = new KL.Audio(KL.game);
     KL.Motion.trackRefresh(KL.game); // the match steps its physics at the screen's refresh rate
+    KL.RenderScale.attach(KL.game); // a GPU that can't keep up renders fewer pixels instead of dropping frames
   };
 
   // Make sure the display fonts are decoded before Phaser measures any text.

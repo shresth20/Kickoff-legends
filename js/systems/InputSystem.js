@@ -96,10 +96,3 @@ KL.KeyboardInput = class KeyboardInput {
     for (const key of Object.values(this.keys)) key.destroy();
   }
 };
-
-KL.NullInput = class NullInput {
-  update() {
-    return { ...KL.EMPTY_INTENT };
-  }
-  destroy() {}
-};

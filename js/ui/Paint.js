@@ -25,7 +25,6 @@ window.KL = window.KL || {};
     white: ['#FFFFFF', '#F2F4FA', '#DDE1EE'],
     whiteLip: '#99A0B9',
   };
-  KL.UI_COLORS = C;
 
   /* ------------------------------------------------------------ primitives */
   const rr = (ctx, x, y, w, h, r) => {
@@ -156,6 +155,218 @@ window.KL = window.KL || {};
     return { key, ox: (M + w / 2) / tw, oy: (M + h / 2) / th, lip: LIP };
   }
 
+  /* ----------------------------------------------------------------- pill */
+  /**
+   * The welcome screen's pill buttons, drawn to match its art: a soft ink drop, a white rim, an ink
+   * outline, then a glossy face (orange-gold for Play, blue for the others) with its ends shaded, a
+   * light streak along the top, a glint in the top-left curve and a lip along the bottom.
+   * kind 'play' | 'blue'; state as button(): 0 idle · 1 hover/focus (brighter, glowing) · 2 pressed.
+   * w×h is the outer size, white rim included.
+   */
+  const PILL = {
+    play: {
+      face: [[0, '#FFD733'], [0.14, '#FECB14'], [0.45, '#FEB405'], [0.8, '#FD9502'], [0.86, '#FDB803'], [0.92, '#FD8E01'], [1, '#FB8500']],
+      lipLine: '#FDCF01', lip: '#D14902', ends: 'rgba(236,104,0,0.6)', streak: 'rgba(255,250,205,0.9)', glint: '#FFFFFF', halo: 'rgba(255,236,140,0.95)',
+    },
+    blue: {
+      face: [[0, '#2B7DF0'], [0.3, '#1A5DCC'], [0.7, '#0E3EA6'], [1, '#0A2A90']],
+      lipLine: '#0B2A92', lip: '#0D2FB2', ends: 'rgba(5,28,110,0.55)', streak: 'rgba(120,225,255,0.55)', glint: '#7FE6FF', halo: 'rgba(160,220,255,0.95)',
+    },
+  };
+  const clear = (rgba) => rgba.replace(/[\d.]+\)$/, '0)');
+  function pill(scene, kind, state, w, h) {
+    const M = 16; // room for the drop and the focus glow
+    const tw = w + M * 2, th = h + M * 2;
+    const key = paint(scene, `kl:pill:${kind}:${state}:${w}x${h}`, tw, th, (ctx) => {
+      const P = PILL[kind] || PILL.blue;
+      const pressed = state === 2, hot = state === 1;
+      const shade = (c) => (hot ? tint(c, 0.12) : pressed ? tint(c, -0.06) : c);
+      const x = M, y = M + (pressed ? 2 : 0), r = h / 2;
+      const edge = 1.5, rim = Math.max(3.5, h * 0.045), ink = Math.max(3, h * 0.034);
+      // a glow when focused, else a soft ink drop (none while pressed: the button is pushed in)
+      ctx.save();
+      if (hot) {
+        ctx.shadowColor = P.halo;
+        ctx.shadowBlur = 16;
+      } else if (!pressed) {
+        ctx.shadowColor = 'rgba(4,8,40,0.55)';
+        ctx.shadowBlur = 6;
+        ctx.shadowOffsetY = 3;
+      }
+      rr(ctx, x, y, w, h, r);
+      ctx.fillStyle = '#0B1240';
+      ctx.fill();
+      if (hot) ctx.fill(); // twice: a glow that reads on the grass
+      ctx.restore();
+      // white rim inside a hairline of ink, then the ink outline
+      rr(ctx, x + edge, y + edge, w - edge * 2, h - edge * 2, r - edge);
+      ctx.fillStyle = vgrad(ctx, y, y + h, ['#FFFFFF', '#F4F5FA', '#E3E5F2']);
+      ctx.fill();
+      const o = edge + rim;
+      rr(ctx, x + o, y + o, w - o * 2, h - o * 2, r - o);
+      ctx.fillStyle = C.ink;
+      ctx.fill();
+      // the face: lip colour underneath, a bright line, then the face proper, whose rounded bottom
+      // leaves the lip showing as a crescent
+      const f = o + ink;
+      const fx = x + f, fy = y + f, fw = w - f * 2, fh = h - f * 2, fr = fh / 2;
+      const top = fh - Math.max(2, fh * 0.075);
+      ctx.save();
+      rr(ctx, fx, fy, fw, fh, fr);
+      ctx.clip();
+      ctx.fillStyle = shade(P.lip);
+      ctx.fillRect(fx, fy, fw, fh);
+      rr(ctx, fx, fy, fw, top + Math.max(1, fh * 0.025), fr);
+      ctx.fillStyle = shade(P.lipLine);
+      ctx.fill();
+      const g = ctx.createLinearGradient(0, fy, 0, fy + top);
+      for (const [at, c] of P.face) g.addColorStop(at, shade(c));
+      rr(ctx, fx, fy, fw, top, fr);
+      ctx.fillStyle = g;
+      ctx.fill();
+      // the rounded ends darken towards the outline
+      const e = Math.min(0.2, (fr * 0.55) / fw);
+      const eg = ctx.createLinearGradient(fx, 0, fx + fw, 0);
+      eg.addColorStop(0, P.ends);
+      eg.addColorStop(e, clear(P.ends));
+      eg.addColorStop(1 - e, clear(P.ends));
+      eg.addColorStop(1, P.ends);
+      ctx.fillStyle = eg;
+      ctx.fill();
+      // light streak along the top, glint in the top-left curve
+      const sh = Math.max(2, fh * 0.1), sy = fy + fh * 0.09;
+      rr(ctx, fx + fr * 0.75, sy, fw - fr * 1.5, sh, sh / 2);
+      ctx.fillStyle = vgrad(ctx, sy, sy + sh, [P.streak, P.streak.replace(/[\d.]+\)$/, '0.15)')]);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(fx + fr, fy + fr, fr * 0.72, Math.PI * 1.08, Math.PI * 1.42);
+      ctx.lineWidth = Math.max(2, fh * 0.075);
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = P.glint;
+      ctx.stroke();
+      ctx.restore();
+    });
+    return { key, ox: 0.5, oy: (M + h / 2) / th, lip: 3 };
+  }
+
+  /** The Play button's glyph: an ink-blue rounded triangle pointing right with a white rim, `size` px tall. */
+  function playIcon(scene, size) {
+    const M = Math.ceil(size * 0.06), S = size + M * 2;
+    const key = paint(scene, `kl:icon:play:${size}`, S, S, (ctx) => {
+      const corner = size * 0.1, rim = Math.max(2, size * 0.055);
+      const pad = corner + rim; // the polygon sits inside the rounding and the rim
+      const ph = size - pad * 2, pw = ph * 0.88;
+      const x0 = S / 2 - pw / 2 - size * 0.02, y0 = M + pad; // nudged left: a triangle's weight is on its flat side
+      const tri = () => {
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(x0 + pw, y0 + ph / 2);
+        ctx.lineTo(x0, y0 + ph);
+        ctx.closePath();
+      };
+      ctx.lineJoin = 'round';
+      tri();
+      ctx.fillStyle = ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = pad * 2;
+      ctx.fill();
+      ctx.stroke();
+      tri();
+      ctx.fillStyle = ctx.strokeStyle = vgrad(ctx, y0 - corner, y0 + ph + corner, ['#1C3784', '#0B2468', '#061654']);
+      ctx.lineWidth = corner * 2;
+      ctx.fill();
+      ctx.stroke();
+    });
+    return { key, ox: 0.5, oy: 0.5 };
+  }
+
+  /* ------------------------------------------------------------- football */
+  /**
+   * A football's panels seen from the front, on the unit sphere: the 12 pentagons and 30 seams of a
+   * truncated icosahedron (pentagon centres = icosahedron vertices, corners a third of the way along
+   * its edges), turned so one pentagon faces you, tipped a little to look round.
+   */
+  const FOOTBALL = (() => {
+    const phi = (1 + Math.sqrt(5)) / 2;
+    const norm = (v) => {
+      const l = Math.hypot(...v);
+      return v.map((c) => c / l);
+    };
+    const rotX = ([x, y, z], a) => [x, y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)];
+    const rotY = ([x, y, z], a) => [x * Math.cos(a) + z * Math.sin(a), y, -x * Math.sin(a) + z * Math.cos(a)];
+    const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    const lerp = (a, b, t) => norm(a.map((c, i) => c + (b[i] - c) * t));
+    let V = [];
+    for (const s of [-1, 1]) for (const p of [-phi, phi]) V.push([0, s, p], [s, p, 0], [p, 0, s]);
+    // (0, 1, φ) to the front, then a small tilt
+    V = V.map((v) => rotY(rotX(rotX(norm(v), Math.atan2(1, phi)), -0.32), 0.22));
+    const near = (i) => V.map((_, j) => j).filter((j) => j !== i && dot(V[i], V[j]) > 0.4);
+    const pentagons = V.map((v, i) => {
+      // corners in order round the centre: sort by angle in a tangent basis at v
+      const e1 = norm(Math.abs(v[0]) < 0.9 ? [0, -v[2], v[1]] : [-v[1], v[0], 0]);
+      const e2 = [v[1] * e1[2] - v[2] * e1[1], v[2] * e1[0] - v[0] * e1[2], v[0] * e1[1] - v[1] * e1[0]];
+      const corners = near(i).map((j) => lerp(v, V[j], 1 / 3));
+      corners.sort((a, b) => Math.atan2(dot(a, e2), dot(a, e1)) - Math.atan2(dot(b, e2), dot(b, e1)));
+      return { centre: v, corners };
+    });
+    const seams = [];
+    V.forEach((v, i) => near(i).forEach((j) => j > i && seams.push([lerp(v, V[j], 1 / 3), lerp(v, V[j], 2 / 3)])));
+    return { pentagons, seams };
+  })();
+
+  /**
+   * The loading line's ball, r px in radius, in two layers so it can roll: `panels` (white ball, ink
+   * pentagons and seams: rotate this one) and `light` (highlight, shading and outline, which stay put).
+   */
+  function football(scene, r) {
+    const S = Math.ceil(r * 2 + 6), c = S / 2;
+    // a point on the sphere → canvas; a point round the back is pushed out to the rim
+    const at = ([x, y, z]) => {
+      const k = z < 0 ? 1 / Math.max(1e-6, Math.hypot(x, y)) : 1;
+      return [c + x * k * r, c - y * k * r];
+    };
+    const panels = paint(scene, `kl:football:${r}`, S, S, (ctx) => {
+      circle(ctx, c, c, r);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fill();
+      ctx.save();
+      circle(ctx, c, c, r);
+      ctx.clip();
+      ctx.strokeStyle = ctx.fillStyle = C.ink;
+      ctx.lineJoin = ctx.lineCap = 'round';
+      ctx.lineWidth = Math.max(1, r * 0.07);
+      for (const [a, b] of FOOTBALL.seams) {
+        if (a[2] + b[2] <= 0) continue;
+        ctx.beginPath();
+        ctx.moveTo(...at(a));
+        ctx.lineTo(...at(b));
+        ctx.stroke();
+      }
+      for (const p of FOOTBALL.pentagons) {
+        if (p.centre[2] < -0.25) continue;
+        ctx.beginPath();
+        p.corners.forEach((q, k) => (k ? ctx.lineTo(...at(q)) : ctx.moveTo(...at(q))));
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    });
+    const light = paint(scene, `kl:football-light:${r}`, S, S, (ctx) => {
+      const g = ctx.createRadialGradient(c - r * 0.38, c - r * 0.42, r * 0.05, c, c, r * 1.02);
+      g.addColorStop(0, 'rgba(255,255,255,0.75)');
+      g.addColorStop(0.32, 'rgba(255,255,255,0)');
+      g.addColorStop(0.7, 'rgba(20,24,70,0)');
+      g.addColorStop(1, 'rgba(20,24,70,0.5)');
+      circle(ctx, c, c, r);
+      ctx.fillStyle = g;
+      ctx.fill();
+      ctx.lineWidth = Math.max(1.5, r * 0.09);
+      ctx.strokeStyle = C.ink;
+      ctx.stroke();
+    });
+    return { panels: { key: panels, ox: 0.5, oy: 0.5 }, light: { key: light, ox: 0.5, oy: 0.5 } };
+  }
+
   /* ---------------------------------------------------------------- panel */
   /** The gold-framed navy board used for dialogs (Pause, Settings, Result). */
   function panel(scene, w, h) {
@@ -258,71 +469,6 @@ window.KL = window.KL || {};
     return { key, ox: (M + w / 2) / tw, oy: (M + h / 2) / th };
   }
 
-  /* --------------------------------------------------------------- keycap */
-  const measureCtx = document.createElement('canvas').getContext('2d');
-  const KEY_FONT = (px) => `700 ${px}px Oswald, "Arial Narrow", sans-serif`; // key names are Latin in every locale
-  /** Light key cap with the key's label printed on it, h logical px tall; width grows with the label. */
-  function keycap(scene, label, h) {
-    const long = label.length > 2;
-    const fontPx = Math.round(h * (long ? 0.42 : 0.58));
-    measureCtx.font = KEY_FONT(fontPx);
-    const w = Math.max(h, Math.ceil(measureCtx.measureText(label).width + h * 0.55));
-    const M = 3, LIP = Math.max(2, Math.round(h * 0.12));
-    const tw = w + M * 2, th = h + M * 2 + LIP;
-    const key = paint(scene, `kl:key:${label}:${h}`, tw, th, (ctx) => {
-      const r = Math.max(5, h * 0.24);
-      rr(ctx, M - 1.5, M - 1.5, w + 3, h + LIP + 3, r + 1.5);
-      ctx.fillStyle = C.ink;
-      ctx.fill();
-      rr(ctx, M, M + LIP, w, h, r);
-      ctx.fillStyle = C.whiteLip;
-      ctx.fill();
-      rr(ctx, M, M, w, h, r);
-      ctx.fillStyle = vgrad(ctx, M, M + h, C.white);
-      ctx.fill();
-      ctx.font = KEY_FONT(fontPx);
-      ctx.fillStyle = C.ink;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(label, M + w / 2, M + h / 2 + fontPx * 0.04);
-    });
-    return { key, ox: (M + w / 2) / tw, oy: (M + h / 2) / th, w };
-  }
-
-  /* ----------------------------------------------------------- super ring */
-  /** Meter socket: ink disc, gold rim, dark track the fill arc is drawn on (radius r = track centre). */
-  function ring(scene, r, track) {
-    const outer = r + track / 2 + 6;
-    const S = outer + 6;
-    const key = paint(scene, `kl:ring:${r}:${track}`, S * 2, S * 2 + 4, (ctx) => {
-      ctx.save();
-      ctx.shadowColor = 'rgba(5,7,25,0.5)';
-      ctx.shadowBlur = 8;
-      ctx.shadowOffsetY = 3;
-      circle(ctx, S, S, outer + 2);
-      ctx.fillStyle = C.ink;
-      ctx.fill();
-      ctx.restore();
-      const g = ctx.createLinearGradient(0, S - outer, 0, S + outer);
-      g.addColorStop(0, '#FFE45C');
-      g.addColorStop(1, '#D9930C');
-      circle(ctx, S, S, outer);
-      ctx.fillStyle = g;
-      ctx.fill();
-      circle(ctx, S, S, r + track / 2 + 1.5);
-      ctx.fillStyle = C.ink;
-      ctx.fill();
-      circle(ctx, S, S, r);
-      ctx.lineWidth = track;
-      ctx.strokeStyle = '#2A2F5C';
-      ctx.stroke();
-      circle(ctx, S, S, r - track / 2 - 0.5);
-      ctx.fillStyle = vgrad(ctx, S - r, S + r, C.face);
-      ctx.fill();
-    });
-    return { key, ox: 0.5, oy: S / (S * 2 + 4) };
-  }
-
   /** Soft radial glow (box-shadow-like halo), e.g. behind a ready super meter. */
   function glow(scene, r, color) {
     const key = paint(scene, `kl:glow:${r}:${color}`, r * 2, r * 2, (ctx) => {
@@ -377,5 +523,5 @@ window.KL = window.KL || {};
     return { key, ox: 0.5, oy: 0.5 };
   }
 
-  KL.Paint = { C, rr, vgrad, tint, circle, stud, gloss, paint, place, button, panel, card, keycap, ring, glow, fullscreenIcon };
+  KL.Paint = { C, rr, vgrad, tint, circle, stud, gloss, paint, place, button, pill, playIcon, football, panel, card, glow, fullscreenIcon };
 })();

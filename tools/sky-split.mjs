@@ -5,8 +5,8 @@
  *
  *   node tools/sky-split.mjs            (also runs at the end of `npm run assets:build`)
  *
- * Input: assets/image/<sky>.png when present (full quality), else the strip slice-sheet.mjs wrote
- * to assets/images/backgrounds/<sky>.webp.
+ * Input: the raw <sky>.png in assets/source/ when present (full quality, found by rawFile), else the
+ * strip slice-sheet.mjs wrote to assets/images/backgrounds/<sky>.webp.
  *
  * The painted skies are flat horizontal bands — every row of sky is one colour — so anything that
  * differs from its row's colour is an object painted on the sky. Objects are found as connected blobs:
@@ -20,10 +20,9 @@ import { existsSync, writeFileSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { RAW_DIR, BG_DIR } from './manifest.mjs';
+import { BG_DIR, rawFile } from './manifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const rawDir = resolve(root, RAW_DIR);
 const bgDir = resolve(root, BG_DIR);
 const encode = (img) => img.webp({ quality: 92, alphaQuality: 100, smartSubsample: true, effort: 6 });
 
@@ -205,9 +204,9 @@ function pack(rects) {
 }
 
 async function split({ key, id }) {
-  const raw = join(rawDir, `${key}.png`);
+  const raw = rawFile(key);
   const strip = join(bgDir, `${key}.webp`);
-  const src = existsSync(raw) ? raw : existsSync(strip) ? strip : null;
+  const src = raw ?? (existsSync(strip) ? strip : null);
   if (!src) return { report: `SKIP ${key} (no source)` };
   const { data, info } = await sharp(src).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const img = { data, width: info.width, height: info.height };

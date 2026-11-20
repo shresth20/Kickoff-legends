@@ -1,20 +1,20 @@
 /* KL.Audio — the game's sound engine. WebAudio only and no files needed: every sound is synthesised
  * (the crowd baked offline once at start-up), so the game stays offline and file:// safe.
  *
- * Mixer: each sound plays on one of six buses — music · sfx · ui · voice (the announcer) · crowd · amb,
+ * Mixer: each sound plays on one of five buses — music · sfx · ui · crowd · amb (ambience),
  * each with its own volume (Settings) — summed through a "muffle" low-pass (the pause menu and the
  * goal slow-mo close it), a glue compressor / limiter and the master volume. UI clicks skip the
  * muffle, so the pause menu stays crisp over the muffled match. A stadium reverb (a generated
  * impulse: open-air by day, longer and lusher under the floodlights) is fed by sends from the crowd,
- * whistle, horns, kicks and the announcer.
+ * whistle, horns and kicks.
  *
- * Parts (js/audio/): Kit (DSP helpers), Sfx (one-shot recipes), Crowd (the stand: murmur ↔ roar,
- * reactions, chants), Ambience (day birds, gulls timed to
- * the sky's flocks, wind; night crickets, floodlight hum, shooting-star shimmer), Music (the sequenced
- * theme, stingers), Commentary (the stadium announcer) and Director (reads a match and drives them).
+ * Parts (js/audio/): Kit (DSP helpers), Sfx (one-shot recipes), Crowd (the stand's reactions and
+ * chants), Ambience (day birds, gulls timed to the sky's flocks, wind; night crickets, floodlight hum,
+ * shooting-star shimmer), Music (the sequenced theme, stingers) and Director (reads a match and drives
+ * them).
  *
  * Studio samples: recordings in assets/sound/ → `npm run audio:build` → assets/audio/audio.js. Any
- * name there (kick_low, crowd_roar, music_menu, vo_en_comm_goal.0 …) replaces the synthesised sound
+ * name there (kick_low, crowd_roar, music_menu …) replaces the synthesised sound
  * of that name — the same "procedural first, studio art swaps in" idea as the image pipeline. */
 window.KL = window.KL || {};
 
@@ -37,10 +37,7 @@ KL.Audio = class AudioManager {
     KL.Activity?.on((active) => {
       if (!this.ctx) return;
       if (active) this.ctx.resume?.().catch?.(() => {});
-      else {
-        this.ctx.suspend?.();
-        KL.Commentary.stop();
-      }
+      else this.ctx.suspend?.();
     });
   }
 
@@ -71,7 +68,6 @@ KL.Audio = class AudioManager {
     this.ambience = new KL.Ambience(this);
     this.applySettings();
     this.setStadium(this.stadium);
-    KL.Commentary.prime();
     if (this.pendingTrack) this.playMusic(this.pendingTrack);
     // studio samples first (they replace bakes), then the crowd bakes in the background
     this.loadSamples().finally(() => this.crowd.bakeAll());
@@ -91,7 +87,7 @@ KL.Audio = class AudioManager {
     this.muffle = K.filter(c, 'lowpass', 20000, 0.6);
     this.mix = K.gain(c, 1);
     K.chain(this.mix, this.muffle, this.limiter, this.master, c.destination);
-    for (const name of ['music', 'sfx', 'voice', 'crowd', 'amb']) this.buses[name] = K.head(K.gain(c, 0), this.mix);
+    for (const name of ['music', 'sfx', 'crowd', 'amb']) this.buses[name] = K.head(K.gain(c, 0), this.mix);
     this.buses.ui = K.head(K.gain(c, 0), this.limiter); // UI skips the muffle
     this.reverb = c.createConvolver();
     K.chain(this.reverb, K.gain(c, 0.85), this.mix);
@@ -105,10 +101,8 @@ KL.Audio = class AudioManager {
     set(this.buses.music.gain, (s.music ?? 0.5) * 0.8);
     set(this.buses.sfx.gain, s.sfx ?? 0.9);
     set(this.buses.ui.gain, (s.sfx ?? 0.9) * 0.8);
-    set(this.buses.voice.gain, 1); // the announcer: on / off in Settings, at the master volume
-    set(this.buses.crowd.gain, s.crowd ?? 0.8);
-    set(this.buses.amb.gain, (s.crowd ?? 0.8) * 0.85);
-    if (s.master === 0 || s.commentary === false) KL.Commentary.stop();
+    set(this.buses.crowd.gain, s.crowd ?? 0.25);
+    set(this.buses.amb.gain, (s.crowd ?? 0.25) * 0.85);
   }
 
   /** Every 40 ms: the music sequencer schedules ahead, the crowd and the ambience follow the game. */
@@ -190,7 +184,6 @@ KL.Audio = class AudioManager {
    */
   play(name, o = {}) {
     if (!this.ready) return;
-    name = KL.SFX_ALIAS[name] || name;
     const t = this.ctx.currentTime + (o.delay || 0);
     const key = o.key != null ? `${name}:${o.key}` : name;
     const cd = KL.SFX_COOLDOWN[name] ?? 0.025;
@@ -215,10 +208,6 @@ KL.Audio = class AudioManager {
     if (!this.ctx) return;
     this.music.play(track, o);
   }
-  stopMusic() {
-    this.pendingTrack = null;
-    this.music?.play(null);
-  }
 
   /** The stadium on screen (Stadium.build calls this): day or night ambience and reverb. */
   setStadium({ night = false } = {}) {
@@ -233,7 +222,7 @@ KL.Audio = class AudioManager {
       this.reverb.buffer = this.irs[night];
     }
     this.ambience.set(night ? 'night' : 'day');
-    if (this.crowd.mode === 'off') this.crowd.setMode('menu'); // a stadium on screen: a distant murmur (a match turns it up)
+    if (this.crowd.mode === 'off') this.crowd.setMode('menu'); // a stadium on screen (a match makes it a live stand)
   }
 
   /** The pause menu: the match goes muffled and a bit quieter (UI clicks stay crisp). */
@@ -244,7 +233,6 @@ KL.Audio = class AudioManager {
     this.muffle.frequency.cancelScheduledValues(t);
     this.muffle.frequency.setTargetAtTime(on ? 620 : 20000, t, on ? 0.07 : 0.15);
     this.mix.gain.setTargetAtTime(on ? 0.55 : 1, t, 0.1);
-    if (on) KL.Commentary.stop();
   }
 
   /** A goal's slow-mo: the world closes in for a beat, then opens up into the roar. */
@@ -256,11 +244,6 @@ KL.Audio = class AudioManager {
     f.exponentialRampToValueAtTime(1400, t + 0.06);
     f.setValueAtTime(1400, t + holdS);
     f.exponentialRampToValueAtTime(20000, t + holdS + openS);
-  }
-
-  /** Legacy entry point (the old match wiring): a crowd swell. */
-  crowdSwell() {
-    this.crowd?.react('cheer');
   }
 
   /* ------------------------------------------------------------------ studio samples */

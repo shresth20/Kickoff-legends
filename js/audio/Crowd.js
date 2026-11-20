@@ -1,11 +1,9 @@
 /* The crowd: a stand full of fans, synthesised voice by voice and baked once at start-up (an
  * OfflineAudioContext renders a few seconds of each texture in the background), then played live.
  *
- * Bed: two seamless loops — a murmur (30 fans chatting) and an excited stand (38 fans shouting) —
- * cross-faded by the crowd's mood, `level` 0…1, which follows the game: the base of the mode (menus:
- * a distant murmur; a match: a lively stand), the pressure the Director feeds it (the ball near a
- * goal, the clock running down, sudden death) and short boosts from reactions. The louder the stand,
- * the brighter it sounds (a low-pass opens with the level).
+ * There is no constant chatter: the stand is heard when it reacts. Its mood, `level` 0…1 (the pressure
+ * the Director feeds it — the ball near a goal, the clock running down, sudden death — plus short
+ * boosts from reactions), decides when the fans have a calm spell to start a chant.
  *
  * Reactions (one-shots): roar (a goal: the stand erupts, horns blare, applause rolls on), cheer, ooh
  * (a near miss), aww (a chance gone), boo (whistles and jeers), applause, and chants — fans drumming and
@@ -15,44 +13,7 @@ window.KL = window.KL || {};
 
 (() => {
   const K = KL.AudioKit;
-  const LOOP_FADE = 1; // s rendered past a loop's length, crossfaded into its start
   const SR = 32000; // crowds have little above 16 kHz: a third less memory than 48 kHz
-  const SPEECH = ['a', 'e', 'i', 'o', 'u', 'uh', 'ae'];
-
-  /** One fan chatting: syllables of random vowels in phrases, pitch wandering like speech. */
-  function talker(oc, dest, dur, o) {
-    const src = K.osc(oc, 'sawtooth', o.f0, 0, dur);
-    const buzz = K.gain(oc, 1);
-    src.connect(buzz);
-    K.chain(K.noise(oc, 'white', 0, dur), K.gain(oc, 0.1 + 0.2 * o.excited), buzz);
-    const amp = K.head(K.gain(oc, 0), dest);
-    const bands = [0, 1, 2].map((k) => {
-      const bp = K.filter(oc, 'bandpass', 600, K.FORMANT_Q[k]);
-      const g = K.gain(oc, 0);
-      K.chain(buzz, bp, g, amp);
-      return { bp, g };
-    });
-    let t = Math.random() * 0.8;
-    while (t < dur) {
-      const n = 2 + Math.floor(Math.random() * 6);
-      for (let s = 0; s < n && t < dur; s++) {
-        const shout = o.excited && Math.random() < 0.14;
-        const syl = shout ? K.rand(0.3, 0.75) : K.rand(0.08, 0.2);
-        const V = K.VOWELS[shout ? K.pick(['a', 'e', 'o', 'ae']) : K.pick(SPEECH)];
-        bands.forEach(({ bp, g }, k) => {
-          bp.frequency.setTargetAtTime(V.f[k] * o.shift, t, 0.012);
-          g.gain.setTargetAtTime(V.g[k] * K.FORMANT_MAKE[k], t, 0.012);
-        });
-        const lvl = o.level * K.rand(0.45, 1) * (shout ? 1.5 : 1);
-        amp.gain.setTargetAtTime(lvl, t, 0.012);
-        amp.gain.setTargetAtTime(lvl * 0.12, t + syl * 0.65, 0.025);
-        src.frequency.setTargetAtTime(o.f0 * K.rand(0.88, 1.18) * (shout ? 1.35 : 1), t, 0.03);
-        t += syl;
-      }
-      amp.gain.setTargetAtTime(0, t, 0.04);
-      t += K.rand(0.12, 1.1) * (1 - 0.65 * o.excited);
-    }
-  }
 
   /** A crowd of `n` voices, each from make(i) (KL.AudioKit.voice options), spread across the stand. */
   function crowdOf(oc, dest, n, make) {
@@ -83,15 +44,6 @@ window.KL = window.KL || {};
 
   /** The bakes: name → { sec, loop?, build(oc, dest) | js(sr) → [L, R] }. */
   const BAKES = {
-    crowd_murmur: { sec: 8, loop: true, build: (oc, d) => babbleOf(oc, d, { talkers: 30, f0: [95, 220], level: 0.32, bright: 2200, excited: 0, rumble: 0.5, rumbleHz: 450 }) },
-    crowd_excited: {
-      sec: 8,
-      loop: true,
-      build(oc, d) {
-        babbleOf(oc, d, { talkers: 38, f0: [140, 320], level: 0.42, bright: 3600, excited: 1, rumble: 0.7, rumbleHz: 800 });
-        for (let i = 0; i < 5; i++) whistler(oc, d, K.rand(0, 8), K.rand(0.4, 1), K.rand(2400, 3600), K.rand(0.03, 0.06));
-      },
-    },
     crowd_hey: {
       sec: 0.8,
       build(oc, d) {
@@ -155,19 +107,7 @@ window.KL = window.KL || {};
     crowd_clap: { sec: 0.32, js: (sr) => K.unisonClap(sr) },
   };
   // the order they bake in: what the menus need first
-  const ORDER = ['crowd_murmur', 'crowd_hey', 'crowd_excited', 'crowd_roar', 'crowd_applause', 'crowd_ooh', 'crowd_clap', 'crowd_aww', 'crowd_boo'];
-
-  /** Many fans talking at once (+ the low rumble of a full stand). */
-  function babbleOf(oc, dest, o) {
-    const dur = oc.length / oc.sampleRate;
-    K.chain(K.noise(oc, 'pink', 0, dur), K.filter(oc, 'lowpass', o.rumbleHz, 0.5), K.gain(oc, o.rumble), dest);
-    for (let i = 0; i < o.talkers; i++) {
-      const near = Math.random(); // far fans are quieter and duller
-      const lp = K.filter(oc, 'lowpass', o.bright * (0.5 + near * 0.6), 0.5);
-      K.chain(lp, K.panner(oc, K.rand(-0.95, 0.95)), dest);
-      talker(oc, lp, dur, { f0: K.rand(o.f0[0], o.f0[1]), shift: K.rand(0.95, 1.25), level: o.level * (0.35 + near * 0.65), excited: o.excited });
-    }
-  }
+  const ORDER = ['crowd_hey', 'crowd_roar', 'crowd_applause', 'crowd_ooh', 'crowd_clap', 'crowd_aww', 'crowd_boo'];
 
   /** Peak-normalise an AudioBuffer in place. */
   function normaliseBuffer(buf, to = 0.9) {
@@ -179,11 +119,8 @@ window.KL = window.KL || {};
     constructor(A) {
       const c = A.ctx;
       this.A = A;
-      this.out = K.head(K.gain(c, 1), A.buses.crowd); // commentary ducks it
+      this.out = K.head(K.gain(c, 1), A.buses.crowd);
       K.chain(this.out, K.gain(c, 0.3), A.reverb);
-      this.bedFilter = K.head(K.filter(c, 'lowpass', 1000, 0.5), this.out);
-      this.murmurG = K.head(K.gain(c, 0), this.bedFilter);
-      this.excitedG = K.head(K.gain(c, 0), this.bedFilter);
       // the drummers and clappers of the chants sit in one end of the stand
       this.chantBus = K.head(K.gain(c, 0.6), K.panner(c, -0.35), this.out);
       this.mode = 'off';
@@ -201,7 +138,6 @@ window.KL = window.KL || {};
         if (this.A.hasSample(name)) continue;
         p = p.then(() => this.bake(name)).catch((e) => console.warn(`[audio] crowd bake ${name}:`, e));
       }
-      this.startBeds(); // studio beds start straight away
       return p;
     }
 
@@ -209,53 +145,16 @@ window.KL = window.KL || {};
       const job = BAKES[name];
       let buf;
       if (job.js) buf = K.toBuffer(this.A.ctx, job.js(SR), SR);
-      else {
-        buf = await K.bake(job.sec + (job.loop ? LOOP_FADE : 0), job.build, { sampleRate: SR });
-        if (job.loop) buf = K.loopify(this.A.ctx, buf, LOOP_FADE);
-      }
+      else buf = await K.bake(job.sec, job.build, { sampleRate: SR });
       this.A.bakes[name] = normaliseBuffer(buf);
-      if (name === 'crowd_murmur' || name === 'crowd_excited') this.startBeds();
     }
 
-    /** Start the two bed loops (silent until the level asks for them), once their buffers exist. */
-    startBeds() {
-      const c = this.A.ctx;
-      for (const [name, g, key] of [['crowd_murmur', this.murmurG, 'murmurSrc'], ['crowd_excited', this.excitedG, 'excitedSrc']]) {
-        if (this[key]) continue;
-        const buf = this.A.buffer(name);
-        if (!buf) continue;
-        const s = c.createBufferSource();
-        s.buffer = buf;
-        s.loop = true;
-        s.connect(g);
-        s.start(c.currentTime, Math.random() * buf.duration);
-        this[key] = s;
-      }
-    }
-
-    /** 'off' | 'menu' (a distant murmur round the menus) | 'match' (a live stand). */
+    /** 'off' | 'menu' | 'match' (a live stand: it chants in the calm spells). */
     setMode(mode) {
       if (mode === this.mode) return;
       this.mode = mode;
       this.pressure = 0;
       this.nextChant = mode === 'match' ? this.A.now + K.rand(12, 20) : Infinity;
-    }
-
-    /** Commentary talks over the crowd: it drops back a little. */
-    duck(on) {
-      if (!this.A.ctx) return;
-      this.out.gain.setTargetAtTime(on ? 0.62 : 1, this.A.now, on ? 0.1 : 0.4);
-    }
-
-    /** Bed gains and brightness for a crowd `level` 0…1 in `mode` (pure). */
-    static levels(level, mode) {
-      if (mode === 'off') return { murmur: 0, excited: 0, cutoff: 800 };
-      if (mode === 'menu') return { murmur: 0.22 + level, excited: 0, cutoff: 900 };
-      return {
-        murmur: 0.8 - 0.35 * level,
-        excited: Math.pow(level, 1.4) * 1.15,
-        cutoff: 800 + 4200 * Math.pow(level, 1.2),
-      };
     }
 
     tick(t, dt) {
@@ -265,10 +164,6 @@ window.KL = window.KL || {};
       // a crowd's mood swells fast and settles slowly
       this.level += (target - this.level) * (1 - Math.exp(-dt / (target > this.level ? 0.25 : 1.2)));
       if (!Number.isFinite(this.level)) this.level = this.pressure = this.boost = 0;
-      const L = KL.Crowd.levels(this.level, this.mode);
-      this.murmurG.gain.setTargetAtTime(L.murmur, t, 0.1);
-      this.excitedG.gain.setTargetAtTime(L.excited, t, 0.1);
-      this.bedFilter.frequency.setTargetAtTime(L.cutoff, t, 0.15);
       // the calm spells of a match: the fans start a chant
       if (t >= this.nextChant) {
         if (!this.A.paused && this.level < 0.55 && t - this.lastReact > 5) this.chant(t + 0.15);

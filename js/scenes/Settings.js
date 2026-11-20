@@ -43,7 +43,7 @@ KL.SettingsScene = class SettingsScene extends Phaser.Scene {
     };
     const sfxTaste = taste(() => KL.audio?.play('kick_low'), 260);
     const crowdTaste = taste(() => KL.audio?.crowd?.react('cheer', { gain: 0.5 }));
-    // muted from the menu's speaker button: moving a slider up brings the sound back
+    // a saved master mute (from the old menu speaker button): moving a slider up brings the sound back
     const volume = (key) => (v) => {
       const patch = { [key]: v };
       if (KL.Save.settings.master === 0 && v > 0) patch.master = KL.unmuteVolume || 0.8;
@@ -56,15 +56,11 @@ KL.SettingsScene = class SettingsScene extends Phaser.Scene {
         volume('sfx')(v);
         sfxTaste();
       })),
-      row(0, 'settings_crowd', slider(s.crowd ?? 0.8, (v) => {
+      row(0, 'settings_crowd', slider(s.crowd ?? 0.25, (v) => {
         volume('crowd')(v);
         crowdTaste();
       })),
     ];
-    const commentary = row(1, 'settings_commentary', (wx, y) => new KL.Toggle(this, wx + 38, y, s.commentary !== false, (v) => {
-      this.apply({ commentary: v });
-      if (v) KL.Commentary?.say('comm_kickoff', {}, { priority: 1 });
-    }));
     const shake = row(1, 'settings_shake', (wx, y) => new KL.Toggle(this, wx + 38, y, s.screenShake, (v) => this.apply({ screenShake: v })));
     const locales = KL.I18n.available;
     const langBtn = row(1, 'settings_language', (wx, y) => new KL.Button(this, wx + 60, y, s.locale.toUpperCase(), () => {
@@ -82,7 +78,7 @@ KL.SettingsScene = class SettingsScene extends Phaser.Scene {
       ui.setPosition(V.cx, V.cy + 6 * k).setScale(k);
     });
 
-    const nav = new KL.MenuNav(this, [...sliders, commentary, shake, langBtn, back], { onBack: () => this.back() });
+    const nav = new KL.MenuNav(this, [...sliders, shake, langBtn, back], { onBack: () => this.back() });
     this.input.keyboard.on('keydown-LEFT', () => {
       const it = nav.items[nav.index];
       if (it instanceof KL.Slider) it.nudge(-0.1);

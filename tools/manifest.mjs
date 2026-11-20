@@ -13,8 +13,9 @@
  *   fans       a line-up of `cols` fans + the same line-up arms-up (`cheer`) → one calm + one cheer
  *              frame per fan, `fan/<out><nn>` and `fan/<out><nn>_cheer` (see emitFans)
  *
- * Raw files are looked up as assets/image/<name>.png, then in its sub-folders (e.g. new2/), where a
- * browser's "<name> (1).png" duplicate also counts.
+ * Raw files are looked up by rawFile() below: assets/source/<name>.png (where import-raw drops new
+ * downloads), then its sub-folders (characters/, stadium/, props/, ui/, fx/, welcome/, or a new batch
+ * dropped in as its own folder), where a browser's "<name> (1).png" duplicate also counts.
  *
  * atlas: characters | props | ui | fx | crowd
  * cell:  square output cell for sprite frames (pivot bottom-centre unless pivot:'center')
@@ -24,6 +25,9 @@
  * skip:  frame indices of a strip that are cut but not packed (drawn on the sheet, unused by the game);
  *        the other frames keep their names
  */
+import { existsSync, readdirSync, statSync } from 'node:fs';
+import { resolve, join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 /**
  * [state, frames, sizeRef, pivot]
@@ -60,8 +64,8 @@ export const FAN_CELL_W = 208;
 export const FAN_CELL_H = 320;
 export const FAN_FEET_Y = 312;
 
-// The raw <id>_turnaround and <id>_kit_mask sheets are not sliced: the game never shows them (no
-// animation in KL.CHARACTER_ANIMS uses them). List them here again if it ever does.
+// The game shows no turnaround or kit-mask art (no animation in KL.CHARACTER_ANIMS uses them), so
+// those raw sheets were dropped from assets/source/. Generate them again if it ever does.
 function character(id) {
   return [
     { name: `${id}_portrait`, kind: 'single', atlas: 'ui', keepAspect: true, out: `${id}_portrait`, maxSize: 256 },
@@ -100,8 +104,9 @@ export const ASSETS = [
   { name: 'new-pitch', kind: 'background', outs: ['bg_pitch'] },
   { name: 'bg_sky_night', kind: 'background' },
 
-  // Buttons, panels, cards and key caps are NOT sliced from art any more: js/ui/Paint.js draws them in
-  // code at screen resolution (the raw ui_buttons, ui_panel_and_cards and ui_keycaps sheets are unused).
+  // Buttons, panels, cards and key caps are NOT sliced from art any more: they are drawn in code at
+  // screen resolution (js/ui/Paint.js; the controller's keys, js/ui/TouchControls.js). Their old raw
+  // sheets were dropped from assets/source/.
   { name: 'ui_logo', kind: 'single', atlas: 'ui', keepAspect: true, out: 'ui_logo', maxSize: 1600 },
   // the match HUD's scoreboard plate (js/ui/HUD.js places the flags, names, scores and clock on it
   // from slots measured on this art: KL.HUD_SCOREBOARD.art). Kept near full size: it is shown
@@ -124,7 +129,31 @@ export const ASSETS = [
   { name: 'fx_super_aura', kind: 'strip', atlas: 'fx', cols: 8, cell: 320, cellH: 340, pivot: 'center', out: 'fx_super_aura' },
 ];
 
-export const RAW_DIR = 'assets/image'; // source PNGs (flat magenta background)
+export const RAW_DIR = 'assets/source'; // source PNGs (flat magenta background), git-ignored
 export const ATLAS_DIR = 'assets/images/atlases';
 export const BG_DIR = 'assets/images/backgrounds';
-export const PREVIEW_DIR = 'assets/images/preview';
+export const WELCOME_DIR = 'assets/images/welcome';
+export const ICON_DIR = 'assets/images/icons';
+export const PREVIEW_DIR = 'tools/.preview'; // --preview contact sheets for review (git-ignored, never shipped)
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+/**
+ * The raw PNG for an asset name (absolute path), or null: RAW_DIR/<name>.png, else the newest
+ * "<name>.png" or "<name> (n).png" in one of its sub-folders.
+ */
+export function rawFile(name) {
+  const rawDir = resolve(ROOT, RAW_DIR);
+  if (!existsSync(rawDir)) return null;
+  const direct = join(rawDir, `${name}.png`);
+  if (existsSync(direct)) return direct;
+  let best = null;
+  for (const dir of readdirSync(rawDir, { withFileTypes: true }).filter((d) => d.isDirectory())) {
+    for (const f of readdirSync(join(rawDir, dir.name))) {
+      if (!/\.png$/i.test(f) || f.replace(/\.png$/i, '').replace(/\s*\(\d+\)$/, '') !== name) continue;
+      const p = join(rawDir, dir.name, f), t = statSync(p).mtimeMs;
+      if (!best || t > best.t) best = { p, t };
+    }
+  }
+  return best?.p ?? null;
+}

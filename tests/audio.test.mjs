@@ -4,14 +4,11 @@ import assert from 'node:assert/strict';
 // The audio scripts are classic scripts on window.KL; their data and pure helpers need no WebAudio.
 globalThis.window = globalThis;
 globalThis.KL = { TUNING: { world: { width: 1280, height: 720 } } };
-await import('../locales/locales.js');
-await import('../js/core/I18n.js');
 await import('../js/audio/Kit.js');
 await import('../js/audio/Music.js');
 await import('../js/audio/Crowd.js');
-await import('../js/audio/Commentary.js');
 await import('../js/audio/Director.js');
-const { AudioKit: K, SONGS, CHORDS, DRUMS, songAdvance, Crowd, AudioDirector, Commentary, I18n } = globalThis.KL;
+const { AudioKit: K, SONGS, CHORDS, DRUMS, songAdvance, AudioDirector } = globalThis.KL;
 
 test('pitch and panning helpers', () => {
   assert.equal(K.midi(69), 440);
@@ -81,19 +78,6 @@ test('the sequencer walks the whole song, then loops back', () => {
   assert.deepEqual(pos, { sec: song.loopTo, bar: 0, step: 0 });
 });
 
-test('the crowd gets louder and brighter with its mood', () => {
-  let prev = Crowd.levels(0, 'match');
-  assert.equal(prev.excited, 0, 'a calm stand has no shouting layer');
-  for (let l = 0.1; l <= 1.0001; l += 0.1) {
-    const L = Crowd.levels(l, 'match');
-    assert.ok(L.excited > prev.excited && L.cutoff > prev.cutoff, `level ${l.toFixed(1)}`);
-    assert.ok(L.murmur > 0 && L.excited <= 1.2);
-    prev = L;
-  }
-  assert.equal(Crowd.levels(0.5, 'menu').excited, 0, 'the menus only murmur');
-  assert.deepEqual(Crowd.levels(1, 'off'), { murmur: 0, excited: 0, cutoff: 800 });
-});
-
 test('pressure builds near a goal, as the clock runs down and in sudden death', () => {
   const P = (o) => AudioDirector.pressure({ x: 640, vx: 0, secondsLeft: 60, ...o });
   assert.ok(P({}) < 0.01, 'midfield, mid-match: calm');
@@ -103,22 +87,4 @@ test('pressure builds near a goal, as the clock runs down and in sudden death', 
   assert.ok(P({ secondsLeft: 5 }) > P({ secondsLeft: 14 }), 'the last seconds');
   assert.ok(P({ suddenDeath: true }) > P({}), 'sudden death');
   assert.ok(P({ x: 1270, vx: 900, secondsLeft: 1, suddenDeath: true }) <= 0.7, 'capped');
-});
-
-test('every announcer line exists in every language, with the same placeholders', () => {
-  const keys = new Set(Object.keys(globalThis.LOCALES.en).filter((k) => k.startsWith('comm_')).map((k) => k.replace(/\.\d+$/, '')));
-  assert.ok(keys.size >= 10);
-  for (const lang of I18n.available) {
-    I18n.set(lang);
-    for (const key of keys) {
-      const variants = Commentary.variants(key);
-      assert.ok(variants.length >= 1, `${lang}: ${key}`);
-      for (const i of variants) {
-        const en = globalThis.LOCALES.en[`${key}.${i}`] ?? '';
-        const here = I18n.t(`${key}.${i}`);
-        assert.equal(here.includes('{name}'), en.includes('{name}'), `${lang}: ${key}.${i} placeholders`);
-      }
-    }
-  }
-  I18n.set('en');
 });

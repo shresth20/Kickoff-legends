@@ -1,6 +1,5 @@
 /* Match HUD: scoreboard plate (flag + name + score each side, gold timer crest), the on-screen
- * controller (KL.TouchControls — its Super button carries the charge ring), the CPU's super bar,
- * reactions drawer, pause button, goal/kickoff banners.
+ * controller (KL.TouchControls — its Super button carries the charge ring), reactions drawer, pause button, goal/kickoff banners.
  * Lives in its own scene layered over Match so pausing never touches game objects.
  * Like a native game's HUD it is anchored to the screen, not the pitch (KL.View): the scoreboard to
  * the top centre, pause to the top-right corner, reactions to the left edge, the pad to the bottom
@@ -31,7 +30,6 @@ KL.HUD_SCOREBOARD = {
     name: { x: 620, y: 4, w: 340 }, // navy bars, inside the slant
     score: { x: 254, y: -14, w: 150 }, // purple boxes, on the face above the lip
     clock: { y: -32, w: 250 }, labelY: 84, labelW: 150, // gold shield
-    barY: 155, // CPU super bar, under the right-hand name bar
   },
 };
 
@@ -78,9 +76,6 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
     this.match = this.scene.get('Match');
     const live = () => !this.match.paused && !this.match.ended;
     this.controls = new KL.TouchControls(this, { pads: this.pads, isLive: live });
-    // the CPU has no buttons: its super charge is a slim bar under its name plate
-    this.cpuBar = this.buildCpuBar(S.nameX - 6, S.barY, S.nameW + 6);
-
     // reactions drawer + pause for touch screens
     this.drawers = [new KL.EmoteDrawer(this, { x: 46, y: 160, dir: 1, isLive: live, onPick: (index) => this.bus.emit('EMOTE', { player: 0, index }) })];
     this.pauseButton = new KL.Button(this, W.width - 46, 46, 'II', () => live() && this.match.togglePause(), { kind: 'icon', icon: 'ui_icons/07', width: 58, height: 58 }).setDepth(30);
@@ -133,7 +128,7 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
   }
 
   /**
-   * Where the flags, names, scores, clock and CPU bar go on the plate (logical px from its centre;
+   * Where the flags, names, scores and clock go on the plate (logical px from its centre;
    * x of the right-hand slot, mirrored on the left): measured on the art (KL.HUD_SCOREBOARD.art)
    * when the atlas has it, else the painted plate's.
    */
@@ -147,7 +142,6 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
         nameX: A.name.x * k, nameY: A.name.y * k, nameW: A.name.w * k,
         scoreX: A.score.x * k, scoreY: A.score.y * k, scoreW: A.score.w * k,
         clockY: A.clock.y * k, clockW: A.clock.w * k, labelY: A.labelY * k, labelW: A.labelW * k,
-        barY: A.barY * k,
       };
     }
     return {
@@ -156,7 +150,6 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
       nameX: (SB.plateIn + SB.plateOut) / 2 + 4, nameY: 0, nameW: SB.plateOut - SB.plateIn - 34,
       scoreX: SB.boxX, scoreY: 0, scoreW: SB.boxW - 12,
       clockY: -9, clockW: SB.shieldW - 16, labelY: 29, labelW: SB.shieldW * 0.5,
-      barY: SB.plateH / 2 + 13,
     };
   }
 
@@ -292,52 +285,9 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
     this.controls.update();
   }
 
-  /** Charge for player i: their Super button's ring, or the CPU bar. */
+  /** Charge for player i: their Super button's ring (the CPU has none). */
   setMeter(i, value) {
-    if (!this.controls.setSuper(i, value)) this.setCpuBar(value);
-  }
-
-  /** Slim charge bar (CPU) centred at x, y on the scoreboard. */
-  buildCpuBar(x, y, w) {
-    const h = 10;
-    const track = KL.Paint.paint(this, `kl:cpubar:${w}`, w + 8, h + 8, (ctx) => {
-      KL.Paint.rr(ctx, 1, 1, w + 6, h + 6, (h + 6) / 2);
-      ctx.fillStyle = KL.Paint.C.ink;
-      ctx.fill();
-      KL.Paint.rr(ctx, 4, 4, w, h, h / 2);
-      ctx.fillStyle = '#2A2F5C';
-      ctx.fill();
-    });
-    const bar = { x, y, w, h, value: 0, ready: false };
-    bar.glow = KL.Paint.place(this, x, y, KL.Paint.glow(this, Math.round(w * 0.36), 'rgba(255,140,26,0.8)')).setScale(1 / KL.UIRES, 0.3 / KL.UIRES).setVisible(false);
-    bar.fill = this.add.graphics();
-    this.scoreboard.add([bar.glow, this.add.image(x, y, track).setScale(1 / KL.UIRES), bar.fill]);
-    return bar;
-  }
-
-  setCpuBar(value) {
-    const bar = this.cpuBar;
-    if (!bar) return;
-    const max = KL.TUNING.super.max;
-    const ready = value >= max;
-    if (ready !== bar.ready) {
-      bar.ready = ready;
-      this.tweens.killTweensOf([bar.glow, bar.fill]);
-      bar.fill.setAlpha(1);
-      bar.glow.setVisible(ready).setAlpha(0.5);
-      if (ready) {
-        this.tweens.add({ targets: bar.glow, alpha: 1, duration: KL.paced(360), yoyo: true, repeat: -1, ease: 'Sine.inOut' });
-        this.tweens.add({ targets: bar.fill, alpha: 0.6, duration: KL.paced(360), yoyo: true, repeat: -1, ease: 'Sine.inOut' });
-      }
-    }
-    const g = bar.fill, fw = Math.max(0, Math.min(1, value / max)) * bar.w;
-    g.clear();
-    if (fw <= 0) return;
-    const x0 = bar.x - bar.w / 2, y0 = bar.y - bar.h / 2;
-    g.fillStyle(ready ? 0xff8c1a : KL.PAL.goldDark, 1);
-    g.fillRoundedRect(x0, y0, Math.max(bar.h, fw), bar.h, bar.h / 2);
-    g.fillStyle(ready ? 0xffb35a : KL.PAL.gold, 1);
-    g.fillRoundedRect(x0, y0, Math.max(bar.h, fw), bar.h * 0.65, { tl: bar.h / 2, tr: bar.h / 2, bl: 2, br: 2 });
+    this.controls.setSuper(i, value);
   }
 
   setScore(t, v) {

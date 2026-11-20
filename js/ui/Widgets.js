@@ -117,7 +117,18 @@ window.KL = window.KL || {};
   };
 
   /**
-   * Button. kind: 'primary' (gold) | 'secondary' (navy) | 'icon' (square navy).
+   * The welcome screen's pill kinds (KL.Paint.pill): icon box and icon–label gap (× height), label colour.
+   * The ui_icons frames keep their 192 px cell, the glyph ~84 % of it, hence the blue pill's bigger box.
+   */
+  const PILL_KINDS = {
+    play: { icon: 0.54, gap: 0.22, color: '#0D1B5E' },
+    blue: { icon: 0.68, gap: 0.24, color: '#ffffff' },
+  };
+  KL.PILL_KINDS = PILL_KINDS;
+
+  /**
+   * Button. kind: 'primary' (gold) | 'secondary' (navy) | 'icon' (square navy) | 'play' / 'blue'
+   * (the welcome screen's pills: italic label, white-rimmed face).
    * Supports mouse + a `focused` state driven by keyboard navigation.
    */
   KL.Button = class Button extends Phaser.GameObjects.Container {
@@ -125,6 +136,7 @@ window.KL = window.KL || {};
       super(scene, x, y);
       scene.add.existing(this);
       this.kind = opts.kind || 'primary';
+      this.pill = PILL_KINDS[this.kind];
       // the face size is bw × bh, never w × h: every Phaser game object has a `w` (its 4th position
       // coordinate) that setPosition(x, y) resets to 0, so a button placed after it was built (the
       // HUD's pause and reactions, the corner buttons…) repainted 0 px wide on its next hover / press
@@ -139,19 +151,27 @@ window.KL = window.KL || {};
       this.face = scene.add.image(0, 0, '__DEFAULT');
       this.add(this.face);
       this.baseScale = 1;
-      if (opts.iconSpec) {
-        // an icon painted in code (KL.Paint spec), e.g. the full-screen brackets
-        this.iconSize = Math.round(this.kind === 'icon' ? this.bh * 0.66 : Math.min(36, this.bh * 0.58));
-        this.icon = KL.Paint.place(scene, 0, 0, opts.iconSpec);
+      this.iconSize = Math.round(this.pill ? this.bh * this.pill.icon : this.kind === 'icon' ? this.bh * 0.66 : Math.min(36, this.bh * 0.58));
+      // opts.iconSpec: a painter (size → KL.Paint spec) or a ready spec, e.g. the full-screen brackets
+      const iconSpec = typeof opts.iconSpec === 'function' ? opts.iconSpec(this.iconSize) : opts.iconSpec;
+      if (iconSpec) {
+        this.icon = KL.Paint.place(scene, 0, 0, iconSpec);
         this.add(this.icon);
       } else if (opts.icon && hasFrame(scene, opts.icon)) {
-        this.iconSize = Math.round(this.kind === 'icon' ? this.bh * 0.66 : Math.min(36, this.bh * 0.58));
         this.icon = scene.add.image(0, 0, 'ui', opts.icon);
         KL.fit(this.icon, this.iconSize, this.iconSize);
         this.add(this.icon);
       }
       if (label && !(this.icon && this.kind === 'icon')) {
-        this.label = KL.bodyText(scene, 0, 0, label, opts.fontSize || (this.kind === 'secondary' ? 22 : 26), '#ffffff', { weight: 'heavy' });
+        const size = opts.fontSize || (this.kind === 'secondary' ? 22 : 26);
+        const F = KL.FONTS.set;
+        // pills: italic, with room for the slant; Play's dark label is edged in white like the art
+        const style = this.pill && {
+          fontStyle: `italic ${F.heavyWeight}`,
+          padding: { x: Math.ceil(size * 0.25), y: Math.ceil(size * F.padY) },
+          ...(this.kind === 'play' ? { stroke: '#FFFFFF', strokeThickness: Math.max(3, Math.round(size * 0.08)) } : {}),
+        };
+        this.label = KL.bodyText(scene, 0, 0, label, size, '#ffffff', { weight: 'heavy', style });
         this.add(this.label);
       }
       this.layout();
@@ -173,11 +193,6 @@ window.KL = window.KL || {};
       this.redraw();
       return this;
     }
-    setLabel(text) {
-      this.label?.setText(text);
-      this.layout();
-      return this;
-    }
     /** Scale of the whole button (touch screens show it larger); the press bounce stays relative to it. */
     setBaseScale(s) {
       this.baseScale = s;
@@ -189,20 +204,12 @@ window.KL = window.KL || {};
       this.icon?.setTexture(spec.key).setOrigin(spec.ox, spec.oy);
       return this;
     }
-    /** Swap the icon art (e.g. sound on ↔ muted). */
-    setIcon(frame) {
-      if (!this.icon || !hasFrame(this.scene, frame)) return this;
-      this.icon.setFrame(frame);
-      KL.fit(this.icon, this.iconSize, this.iconSize);
-      this.layout();
-      return this;
-    }
 
     /** Centre icon + label as one group; shrink the label if it would touch the rounded ends. */
     layout() {
       const pad = this.kind === 'icon' ? 6 : Math.max(16, this.bh * 0.36);
       const iconW = this.icon ? this.iconSize : 0;
-      const gap = this.icon && this.label ? Math.round(this.bh * 0.16) : 0;
+      const gap = this.icon && this.label ? Math.round(this.bh * (this.pill?.gap ?? 0.16)) : 0;
       let labelW = 0;
       if (this.label) {
         KL.fitText(this.label, this.bw - pad * 2 - iconW - gap);
@@ -225,14 +232,18 @@ window.KL = window.KL || {};
 
     redraw() {
       const state = this.disabled ? 3 : this.pressed ? 2 : this.hover || this.focused ? 1 : 0;
-      const spec = KL.Paint.button(this.scene, this.kind, state, this.bw, this.bh);
+      const spec = this.pill
+        ? KL.Paint.pill(this.scene, this.kind, state === 3 ? 0 : state, this.bw, this.bh)
+        : KL.Paint.button(this.scene, this.kind, state, this.bw, this.bh);
       this.face.setTexture(spec.key).setOrigin(spec.ox, spec.oy).setScale(1 / KL.UIRES);
       const dy = state === 2 ? spec.lip - 1 : 0; // contents ride down with the pressed face
       if (this.label) {
+        const color = state === 3 ? '#4a4f68' : this.pill ? this.pill.color : this.kind === 'primary' ? '#1B1F3B' : '#ffffff';
+        const white = color === '#ffffff';
         this.label.setY(dy);
-        this.label.setColor(state === 3 ? '#4a4f68' : this.kind === 'primary' ? '#1B1F3B' : '#ffffff');
-        // a soft ink drop under white labels keeps them legible on the navy gradient
-        this.label.setShadow(0, this.kind === 'primary' || state === 3 ? 0 : 2, 'rgba(10,14,50,0.85)', 0, false, this.kind !== 'primary' && state !== 3);
+        this.label.setColor(color);
+        // a soft ink drop under white labels keeps them legible on the navy / blue gradient
+        this.label.setShadow(0, white ? 2 : 0, 'rgba(10,14,50,0.85)', 0, false, white);
       }
       if (this.icon) this.icon.setY(dy);
     }
@@ -253,9 +264,6 @@ window.KL = window.KL || {};
       this.setSize(w, h);
     }
   };
-
-  /** Key-cap badge ('A', '←', 'SHIFT'…), painted with the label printed on the cap. */
-  KL.KeyCap = (scene, x, y, keyName, size = 36) => KL.Paint.place(scene, x, y, KL.Paint.keycap(scene, KL.keyLabel(keyName), Math.round(size)));
 
   /** Horizontal slider 0..1. */
   KL.Slider = class Slider extends Phaser.GameObjects.Container {
@@ -405,13 +413,18 @@ window.KL = window.KL || {};
     scene.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => scene.scene.start(key, data));
   };
 
-  /** Keyboard list navigation shared by menus: up/down/enter/esc + W/S. */
+  /**
+   * Keyboard list navigation shared by menus: up/down/enter/esc + W/S (left/right + A/D when horizontal).
+   * grid: rows of item indices laid out on screen (e.g. [[0], [1, 2]]): up/down change row, left/right
+   * move along it.
+   */
   KL.MenuNav = class MenuNav {
-    constructor(scene, items, { onBack, horizontal = false } = {}) {
+    constructor(scene, items, { onBack, horizontal = false, grid } = {}) {
       this.scene = scene;
       this.items = items;
       this.index = 0;
       this.onBack = onBack;
+      this.grid = grid;
       const kb = scene.input.keyboard;
       const prevKeys = horizontal ? ['LEFT', 'A'] : ['UP', 'W'];
       const nextKeys = horizontal ? ['RIGHT', 'D'] : ['DOWN', 'S'];
@@ -424,8 +437,15 @@ window.KL = window.KL || {};
       // ignore keys for a moment after the screen opens so one press can't skip two screens
       const readyAt = scene.time.now + 220;
       const ready = () => scene.time.now >= readyAt;
-      bind(prevKeys, () => ready() && this.move(-1));
-      bind(nextKeys, () => ready() && this.move(1));
+      if (grid) {
+        bind(['UP', 'W'], () => ready() && this.step(0, -1));
+        bind(['DOWN', 'S'], () => ready() && this.step(0, 1));
+        bind(['LEFT', 'A'], () => ready() && this.step(-1, 0));
+        bind(['RIGHT', 'D'], () => ready() && this.step(1, 0));
+      } else {
+        bind(prevKeys, () => ready() && this.move(-1));
+        bind(nextKeys, () => ready() && this.move(1));
+      }
       bind(['ENTER', 'SPACE', 'J', 'NUMPAD_ONE'], () => ready() && this.items[this.index]?.activate?.());
       bind(['ESC', 'BACKSPACE'], () => {
         if (this.onBack && ready()) {
@@ -445,6 +465,17 @@ window.KL = window.KL || {};
     move(d) {
       if (!this.items.length) return;
       this.focus((this.index + d + this.items.length) % this.items.length);
+      KL.audio?.play('ui_move');
+    }
+    /** Grid move: dy changes row (keeping the column where the new row has one), dx moves along the row. */
+    step(dx, dy) {
+      const rows = this.grid;
+      const r = Math.max(0, rows.findIndex((row) => row.includes(this.index)));
+      const row = rows[(r + dy + rows.length) % rows.length];
+      const c = Math.max(0, rows[r].indexOf(this.index));
+      const next = dy ? row[Math.min(c, row.length - 1)] : row[(c + dx + row.length) % row.length];
+      if (next === this.index) return;
+      this.focus(next);
       KL.audio?.play('ui_move');
     }
     focus(i) {

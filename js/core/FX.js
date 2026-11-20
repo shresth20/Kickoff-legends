@@ -106,9 +106,9 @@ KL.FX = class FXManager {
   shake(px, ms) {
     if (!KL.Save.settings.screenShake) return;
     // Phaser's shake offset is intensity × camera size × zoom, applied before the zoom again:
-    // divide by RES² so `px` stays logical pixels at any render resolution, and by the view's size
+    // divide by RENDER² so `px` stays logical pixels at any render resolution, and by the view's size
     // relative to 1280×720 so a wide phone or a tall tablet shakes as hard as the design.
-    const k = px / 1000 / (KL.RES * KL.RES), V = KL.View, W = KL.TUNING.world;
+    const k = px / 1000 / (KL.RENDER * KL.RENDER), V = KL.View, W = KL.TUNING.world;
     this.scene.cameras.main.shake(ms, new Phaser.Math.Vector2((k * W.width) / V.w, (k * W.height) / V.h));
   }
 

@@ -4,7 +4,7 @@
  *
  *   node tools/slice-sheet.mjs            build everything in the manifest
  *   node tools/slice-sheet.mjs char_01_run  build one asset (debug)
- *   node tools/slice-sheet.mjs --preview  also write a contact sheet per strip to assets/images/preview/
+ *   node tools/slice-sheet.mjs --preview  also write a contact sheet per strip to tools/.preview/
  *
  * For each raw PNG: key the flat magenta (#FF00FF) background to alpha, detect
  * frame columns/rows by alpha projection, normalise every frame of a strip to one
@@ -16,11 +16,11 @@
  * Output images are WebP: lossy colour at q92 (indistinguishable from PNG on this cel-shaded art)
  * with lossless alpha, so cut-out edges stay exact. ~4× smaller than PNG.
  */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
-import { ASSETS, RAW_DIR, ATLAS_DIR, BG_DIR, PREVIEW_DIR, CHAR_STAND_PX, FAN_STAND_PX, FAN_CELL_W, FAN_CELL_H, FAN_FEET_Y } from './manifest.mjs';
+import { ASSETS, RAW_DIR, ATLAS_DIR, BG_DIR, ICON_DIR, PREVIEW_DIR, CHAR_STAND_PX, FAN_STAND_PX, FAN_CELL_W, FAN_CELL_H, FAN_FEET_Y, rawFile } from './manifest.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -30,25 +30,7 @@ const rawDir = resolve(root, RAW_DIR);
 const atlasDir = resolve(root, ATLAS_DIR);
 const bgDir = resolve(root, BG_DIR);
 const previewDir = resolve(root, PREVIEW_DIR);
-for (const d of [atlasDir, bgDir, previewDir]) mkdirSync(d, { recursive: true });
-
-/**
- * The raw PNG for an asset name: assets/image/<name>.png, else the newest "<name>.png" or
- * "<name> (n).png" in one of its sub-folders (new art batches are dropped in as e.g. new2/). null if none.
- */
-function rawFile(name) {
-  const direct = join(rawDir, `${name}.png`);
-  if (existsSync(direct)) return direct;
-  let best = null;
-  for (const dir of readdirSync(rawDir, { withFileTypes: true }).filter((d) => d.isDirectory())) {
-    for (const f of readdirSync(join(rawDir, dir.name))) {
-      if (!/\.png$/i.test(f) || f.replace(/\.png$/i, '').replace(/\s*\(\d+\)$/, '') !== name) continue;
-      const p = join(rawDir, dir.name, f), t = statSync(p).mtimeMs;
-      if (!best || t > best.t) best = { p, t };
-    }
-  }
-  return best?.p ?? null;
-}
+for (const d of [atlasDir, bgDir, ...(PREVIEW ? [previewDir] : [])]) mkdirSync(d, { recursive: true });
 
 const MAX_ATLAS = 4096;
 /** Encoder for every generated atlas page / background strip (see header). */
@@ -807,7 +789,7 @@ const out = {};
 for (const [k, a] of Object.entries(atlases)) if (a.items.length) out[k] = await a.write();
 // browser-tab icon from the first ball frame
 const ballFrame = atlases.props.items.find((it) => it.name === 'ball/00');
-if (ballFrame) await sharp(ballFrame.buffer).resize(64, 64, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png({ compressionLevel: 9, adaptiveFiltering: true }).toFile(resolve(root, 'assets/images/favicon.png'));
+if (ballFrame) await sharp(ballFrame.buffer).resize(64, 64, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } }).png({ compressionLevel: 9, adaptiveFiltering: true }).toFile(resolve(root, ICON_DIR, 'favicon.png'));
 // merge with any previously written descriptors so partial runs don't wipe other atlases
 const descFile = join(atlasDir, 'atlases.js');
 let prev = {};
@@ -821,4 +803,6 @@ console.log(report.join('\n'));
 console.log(`wrote ${descFile} (${Object.keys(merged).join(', ')})`);
 // the living sky is cut from the skies: refresh its clear skies + drifting clouds whenever they're rebuilt
 if (todo.some((a) => /^bg_sky/.test(a.name))) await import('./sky-split.mjs');
+// the welcome screen's art is not atlas art (tools/make-welcome.mjs): a full build refreshes it too
+if (!only.length) await import('./make-welcome.mjs');
 if (report.some((r) => r.startsWith('FAIL'))) process.exitCode = 1;

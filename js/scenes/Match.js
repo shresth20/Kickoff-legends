@@ -97,7 +97,7 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
   }
 
   /** Match stats from the bus, and the match's sound: KL.AudioDirector (js/audio/Director.js) reads
-   * the bus and the live state and drives the crowd, effects, voices, commentary and music. */
+   * the bus and the live state and drives the crowd, effects and music. */
   wireAudio() {
     this.audioOffs = [
       this.bus.on('KICK', (e) => {
@@ -123,7 +123,6 @@ KL.MatchScene = class MatchScene extends Phaser.Scene {
     this.squirting = false;
     this.players.forEach((p) => (p.frozen = true));
     if (!first) this.rules.state.phase = 'countdown';
-    this.countdownShown = false;
   }
 
   /**

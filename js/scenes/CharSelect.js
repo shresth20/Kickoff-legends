@@ -4,6 +4,9 @@
  * the design area, stacked up from the bottom safe edge, with thumb-sized cards on a phone. */
 window.KL = window.KL || {};
 
+/** Top of the legends' hair in their idle frames, as a fraction of the frame from its top edge. */
+KL.SELECT_HEAD_TOP = 0.22;
+
 KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
   constructor() {
     super('CharSelect');
@@ -30,6 +33,9 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     this.ready = [false, false];
     this.ensureAnims();
     this.sides.forEach((s, i) => this.select(i, KL.CHARACTER_IDS.indexOf(i === 0 ? this.cfg.p1Char : this.cfg.p2Char)));
+    // the CPU doesn't wait for Player 1: it picks a legend at random (not the one Player 1 is on) and
+    // is ready at once. The night toggle restarts the scene and keeps its pick.
+    this.lockCpu(this.instant ? this.sides[1].index : this.randomOther(this.sides[0].index), this.instant);
 
     const kb = this.input.keyboard;
     const c = KL.Save.settings.controls.p1;
@@ -38,8 +44,6 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     bind(c.right, () => this.move(0, 1));
     bind(c.kickLow, () => this.toggleReady(0));
     bind('ENTER', () => this.toggleReady(0));
-    // the CPU browses until Player 1 locks in, then picks a different legend
-    this.cpuShuffle = this.time.addEvent({ delay: 170, loop: true, callback: () => this.select(1, this.sides[1].index + 1) });
     bind('ESC', () => KL.goTo(this, 'Menu'));
     const back = new KL.Button(this, 0, 0, KL.t('menu_back'), () => KL.goTo(this, 'Menu'), { kind: 'secondary', width: 160, height: 50, fontSize: 18 }).setDepth(7);
 
@@ -74,6 +78,7 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     const feet = side.nameY - 18;
     side.shadow.setY(feet - 14);
     side.preview.setY(feet);
+    side.who.setY(feet - side.preview.displayHeight * (1 - KL.SELECT_HEAD_TOP) - 10);
     side.name.setY(side.nameY);
     side.tag.setY(side.tagY);
     side.cards.forEach((card, k) => card.setPosition(side.cx + (k - 1.5) * 100 * cu, cardsY));
@@ -105,6 +110,8 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     if (isCpu) side.preview.setFlipX(true);
     else side.preview.setInteractive({ useHandCursor: true }).on('pointerup', () => this.toggleReady(i)); // tap the legend = Ready
     side.nameK = V.font(44) / 44;
+    // whose side this is, just over the legend's head (placeSide sets its height)
+    side.who = KL.displayText(this, cx, 0, KL.t(isCpu ? 'select_ai' : 'select_you'), 36 * side.nameK, '#ffffff', { originY: 1 }).setDepth(7);
     side.name = KL.displayText(this, cx, 480, '', 44 * side.nameK).setDepth(6);
     side.flag = this.add.image(cx, 480, 'ui', 'flag_eng').setDisplaySize(34, 34).setDepth(6).setVisible(false);
     side.tag = KL.bodyText(this, cx, 516, '', V.font(18), '#c9cde0').setDepth(6);
@@ -157,39 +164,36 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     KL.audio?.play('card_swish', { x: this.sides[i].cx });
   }
 
-  /** Player 1 locks in / backs out (i = 0); the CPU (i = 1, force) only ever locks in after them. */
-  toggleReady(i, force) {
+  /** A random legend index other than `not`. */
+  randomOther(not) {
+    return Phaser.Utils.Array.GetRandom(KL.CHARACTER_IDS.map((_, k) => k).filter((k) => k !== not));
+  }
+
+  /** The CPU takes legend `index` and is ready (quiet: no "shing", e.g. when the night toggle restarts). */
+  lockCpu(index, quiet) {
+    const side = this.sides[1];
+    this.select(1, index);
+    this.ready[1] = true;
+    side.readyText.setVisible(true);
+    side.preview.play(`${KL.CHARACTERS[side.index].id}/celebrate`, true);
+    if (!quiet) KL.audio?.play('ui_confirm', { key: 1 }); // locked in: a blade-like "shing"
+  }
+
+  /** Player 1 locks in / backs out (i = 0). The CPU is ready from the start (lockCpu). */
+  toggleReady(i) {
     const side = this.sides[i];
-    if (side.isCpu && !force) return;
-    this.ready[i] = force ? true : !this.ready[i];
+    if (side.isCpu) return;
+    this.ready[i] = !this.ready[i];
     side.readyText.setVisible(this.ready[i]);
     const def = KL.CHARACTERS[side.index];
     side.preview.play(`${def.id}/${this.ready[i] ? 'celebrate' : 'idle'}`, true);
-    if (this.ready[i]) {
-      // locked in: a blade-like "shing", and the announcer calls their name
-      KL.audio?.play('ui_confirm', { key: i });
-      if (!side.isCpu) KL.Commentary?.say('comm_pick', { name: def.name }, { priority: 1, delay: 0.3, excited: true });
-    } else KL.audio?.play('ui_back');
-    if (i === 0) {
-      if (this.ready[0]) {
-        this.cpuShuffle.paused = true;
-        this.time.delayedCall(420, () => {
-          if (!this.ready[0]) return;
-          const pick = Phaser.Utils.Array.GetRandom(KL.CHARACTER_IDS.map((_, k) => k).filter((k) => k !== side.index));
-          this.select(1, pick);
-          this.time.delayedCall(380, () => this.ready[0] && !this.ready[1] && this.toggleReady(1, true));
-        });
-      } else {
-        if (this.ready[1]) {
-          this.ready[1] = false;
-          this.sides[1].readyText.setVisible(false);
-          this.sides[1].preview.play(`${KL.CHARACTERS[this.sides[1].index].id}/idle`, true);
-        }
-        this.cpuShuffle.paused = false;
-      }
+    if (!this.ready[i]) {
+      KL.audio?.play('ui_back');
+      return;
     }
-    if (this.ready[0] && this.ready[1]) {
-      this.time.delayedCall(700, () => this.ready[0] && this.ready[1] && KL.goTo(this, 'Match', { ...this.cfg }));
-    }
+    KL.audio?.play('ui_confirm', { key: i });
+    // Player 1 locked in the CPU's legend: the CPU switches, so the two legends always differ
+    if (this.sides[1].index === side.index) this.lockCpu(this.randomOther(side.index));
+    this.time.delayedCall(700, () => this.ready[0] && this.ready[1] && KL.goTo(this, 'Match', { ...this.cfg }));
   }
 };

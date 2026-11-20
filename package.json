@@ -10,6 +10,7 @@
     "assets:preview": "node tools/slice-sheet.mjs --preview",
     "assets:sky": "node tools/sky-split.mjs",
     "assets:icons": "node tools/make-icons.mjs",
+    "assets:welcome": "node tools/make-welcome.mjs",
     "audio:build": "node tools/make-audio.mjs",
     "locales:build": "node tools/make-locales.mjs",
     "test": "node --test tests/*.test.mjs",

@@ -4,13 +4,12 @@
  * - Every strike, bounce, body, crossbar and net sounds where it happens (stereo by x), as hard as it
  *   was hit; the ball whooshes through the air by its speed and the fireball roars; boots patter on
  *   the grass with the run cycle; a charged-up player's flames crackle.
- * - The crowd breathes with the game: it builds as the ball nears a goal (more if it's heading in),
- *   as the clock runs down and in sudden death; a shot at goal makes it draw breath, then a goal
+ * - The crowd reacts to the game: a goal
  *   erupts (roar, air horns, applause), a near miss gets an "ooh", a chance blocked an "aww", the
  *   woodwork an "ooh" and a fireball knockdown boos and whistles.
  * - The referee whistles kickoffs, goals, sudden death and full time; the stadium horn sounds for a
  *   goal; the music stings goals and plays the tension track over the last ten seconds and in sudden
- *   death; the announcer calls the big moments. */
+ *   death. */
 window.KL = window.KL || {};
 
 KL.AudioDirector = class AudioDirector {
@@ -39,14 +38,12 @@ KL.AudioDirector = class AudioDirector {
     this.lastFrame = [-1, -1];
     this.superReady = [false, false];
     this.shot = null;
-    this.firstKickoff = true;
     this.lastFrameHit = -1e9;
     this.golden = false;
     const A = this.A;
     A?.crowd?.setMode('match');
     A?.ambience?.setLevel(0.55);
     if (A?.ready) A.crowd.react('cheer', { gain: 0.45 }); // the legends walk out
-    const C = KL.Commentary;
     const p = (i) => scene.players[i];
     const on = (ev, fn) => bus.on(ev, (e) => A?.ready && fn(e || {}));
     this.offs = [
@@ -61,7 +58,6 @@ KL.AudioDirector = class AudioDirector {
         A.play('hurt', { x: v.x });
         A.crowd.react('boo', { gain: 0.45, delay: 0.15 });
         A.crowd.react('rise', { gain: 0.3 });
-        if (Math.random() < 0.6) C.say('comm_knockdown', {}, { priority: 2, delay: 0.35 });
       }),
       on('SUPER_READY', (e) => {
         this.superReady[e.player] = true;
@@ -112,14 +108,12 @@ KL.AudioDirector = class AudioDirector {
     this.A.play(e.part === 'bar' ? 'crossbar' : 'net', { x: e.x, dv: e.dv });
     if (e.part === 'bar' && e.dv > 350 && s.rules.isPlaying) {
       this.A.crowd.react('ooh');
-      KL.Commentary.say('comm_post', {}, { priority: 2 });
       this.shot = null;
     }
   }
 
   goal(e) {
-    const A = this.A, s = this.scene, C = KL.Commentary;
-    const scorer = s.players[e.scorer];
+    const A = this.A, s = this.scene;
     const gx = s.goals[e.scorer === 0 ? 1 : 0].lineX;
     this.shot = null;
     this.golden = !!s.rules.state.suddenDeath;
@@ -129,26 +123,17 @@ KL.AudioDirector = class AudioDirector {
     A.play('goal_horn', { delay: 0.45 });
     A.crowd.react('roar');
     A.play(e.scorer === 0 ? 'sting_goal' : 'sting_concede', { delay: 0.12 });
-    // the announcer: the kind of goal, then what it does to the score
-    const kind = s.ball?.lastTouchKind;
-    const key = this.golden ? 'comm_golden' : kind === 'super' ? 'comm_goal_super' : kind === 'header' ? 'comm_goal_header' : 'comm_goal';
-    const mine = e.score[e.scorer], theirs = e.score[1 - e.scorer];
-    const then = this.golden ? null : mine === theirs ? 'comm_level' : mine === theirs + 1 ? 'comm_lead' : null;
-    C.say(key, { name: scorer.def.name }, { priority: 3, delay: 0.55, excited: true, then: then && { key: then, vars: { name: scorer.def.name } } });
   }
 
   whistle(e) {
-    const A = this.A, C = KL.Commentary;
+    const A = this.A;
     if (e.reason === 'kickoff') {
       A.play('whistle_kickoff');
       A.crowd.react('rise', { gain: 0.3 });
-      if (this.firstKickoff) C.say('comm_kickoff', {}, { priority: 2, delay: 0.4 });
-      this.firstKickoff = false;
     } else if (e.reason === 'suddendeath') {
       A.play('whistle_double');
       A.play('sting_suddendeath', { delay: 0.3 });
       A.playMusic('tension');
-      C.say('comm_suddendeath', {}, { priority: 3, delay: 1.3 });
     } else if (e.reason === 'fulltime') {
       A.play('whistle_final');
       A.music.play(null);
@@ -157,29 +142,23 @@ KL.AudioDirector = class AudioDirector {
 
   clock(e) {
     const A = this.A, n = e.secondsLeft;
-    if (!e.suddenDeath && n === 10) {
-      KL.Commentary.say('comm_ten', {}, { priority: 2 });
-      A.playMusic('tension');
-    }
+    if (!e.suddenDeath && n === 10) A.playMusic('tension');
     if (n <= 10 && n > 3) A.play('clock_tick', { n });
     else if (n <= 3 && n > 0) A.play('countdown');
   }
 
   end(r) {
-    const A = this.A, s = this.scene, C = KL.Commentary;
+    const A = this.A;
     A.music.play(null);
     if (r.winner == null) {
       A.crowd.react('applause', { delay: 0.6, dur: 6 });
-      C.say('comm_fulltime_draw', {}, { priority: 4, delay: 1.3 });
       return;
     }
-    const w = s.players[r.winner];
     if (this.golden) {
       A.crowd.react('applause', { delay: 0.4, dur: 7, gain: 0.7 }); // the golden goal's roar is still going
       return;
     }
     A.crowd.react('roar', { delay: 0.6, dur: 7 });
-    C.say('comm_fulltime_win', { name: w.def.name }, { priority: 4, delay: 1.3, excited: true });
   }
 
   /** The ball through the air, and the fireball's roar: two loops whose level follows the ball. */
@@ -240,10 +219,8 @@ KL.AudioDirector = class AudioDirector {
       if (s.time.now - this.shot.t > 1500) {
         const d = this.shot.closest;
         this.shot = null;
-        if (R.isPlaying && d < 150) {
-          A.crowd.react('ooh');
-          if (Math.random() < 0.4) KL.Commentary.say('comm_close', {}, { priority: 1 });
-        } else if (R.isPlaying && d < 280 && Math.random() < 0.45) A.crowd.react('aww', { gain: 0.5 });
+        if (R.isPlaying && d < 150) A.crowd.react('ooh');
+        else if (R.isPlaying && d < 280 && Math.random() < 0.45) A.crowd.react('aww', { gain: 0.5 });
       }
     }
   }

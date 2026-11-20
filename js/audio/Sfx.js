@@ -407,9 +407,6 @@ window.KL = window.KL || {};
     },
   };
 
-  /** Old names still used by callers. */
-  KL.SFX_ALIAS = { kick_hard: 'kick_low', kick_soft: 'kick_clash', win: 'jingle_win', lose: 'jingle_lose' };
-
   /** Minimum seconds between two plays of a sound (per key, e.g. per player). Default 25 ms. */
   KL.SFX_COOLDOWN = {
     ball_bounce: 0.06,
