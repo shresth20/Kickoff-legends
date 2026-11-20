@@ -1,0 +1,8 @@
+node_modules/
+.DS_Store
+*.log
+# raw ChatGPT downloads are large; keep them local (commit the sliced atlases instead)
+assets/image/
+assets/images/preview/
+tools/.smoke/
+.playwright-mcp/
