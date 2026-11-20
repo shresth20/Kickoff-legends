@@ -26,9 +26,11 @@ const strike = (kind, opts = {}) => {
   return { end, apex, marks, landed: end.landed };
 };
 
+// The arcade ball plays every flight B.time × slower than real (KL.TUNING's BALL_TIME): paths are
+// measured as they always were, times against real time × B.time.
 test('J — the straight kick is a fast, low drive', () => {
   const { apex, marks, landed } = strike('low', { marks: [520] });
-  assert.ok(marks[520].t < 0.65, `centre circle to goal in ${marks[520].t.toFixed(2)} s`);
+  assert.ok(marks[520].t < 0.65 * B.time, `centre circle to goal in ${marks[520].t.toFixed(2)} s`);
   assert.ok(apex < 60, `stays low (apex ${apex.toFixed(0)} px), well under the bar`);
   assert.ok(landed.x > 220, `skims a long way before the first bounce (${landed.x.toFixed(0)} px)`);
 });
@@ -42,8 +44,8 @@ test('K — the long kick climbs over a rival and carries far, fast', () => {
   const { apex, landed, marks } = strike('high', { marks: [400] });
   assert.ok(apex > 180 && apex < 240, `apex ${apex.toFixed(0)} px: over a rival, about bar height`);
   assert.ok(landed.x > 880 && landed.x < 1050, `first lands ${landed.x.toFixed(0)} px away`);
-  assert.ok(landed.t < 1.4, `in the air ${landed.t.toFixed(2)} s`);
-  assert.ok(marks[400].t < 0.6, `400 px out in ${marks[400].t.toFixed(2)} s`);
+  assert.ok(landed.t < 1.4 * B.time, `in the air ${landed.t.toFixed(2)} s`);
+  assert.ok(marks[400].t < 0.6 * B.time, `400 px out in ${marks[400].t.toFixed(2)} s`);
 });
 
 test('K is a genuinely longer kick than J in the air, and J is the quicker one to the goal', () => {
@@ -86,7 +88,8 @@ test('a backspun ball checks up when it lands; a topspun one skips on', () => {
 });
 
 test('rolling: a dribble touch stops within ~200 px, a still ball stays still', () => {
-  const r = simulate({ x: 0, y: ground, vx: 350, vy: 0, omega: 350 / B.radius }, B, { ...world, minX: -1e6, maxX: 1e6 }, null, { maxT: 6 });
+  const touch = 350 / B.time;
+  const r = simulate({ x: 0, y: ground, vx: touch, vy: 0, omega: touch / B.radius }, B, { ...world, minX: -1e6, maxX: 1e6 }, null, { maxT: 10 });
   assert.ok(r.x > 120 && r.x < 240, `rolled ${r.x.toFixed(0)} px`);
   assert.equal(r.vx, 0);
   const still = { vx: 0, vy: 0, omega: 0 };

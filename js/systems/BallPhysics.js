@@ -102,10 +102,11 @@ window.KL = window.KL || {};
     return s;
   }
 
-  /** The world a match ball flies in (from KL.TUNING). */
+  /** The world a match ball flies in (from KL.TUNING). The ball falls under its own gravity (the floaty
+   * arcade ball), not the players'. */
   function matchWorld(T) {
     const W = T.world, r = T.ball.radius;
-    return { gravity: W.gravity, groundY: W.groundY, minX: W.wallPadding + r, maxX: W.width - W.wallPadding - r };
+    return { gravity: T.ball.gravity ?? W.gravity, groundY: W.groundY, minX: W.wallPadding + r, maxX: W.width - W.wallPadding - r };
   }
 
   KL.BallPhysics = { step, launch, simulate, matchWorld };

@@ -1,6 +1,6 @@
 # Kickoff Legends
 
-A cel-shaded 1v1 street-football game. Play against a relaxed CPU — it jogs rather than sprints (≈ 78 % of your pace), reacts a beat late, hesitates before it kicks and shoots a little softer (`KL.TUNING.ai.level`). 90-second matches, driven shots, long balls, headers, sprint, and a charged Super Skill. Built with vendored Phaser 3, plain HTML/CSS/JS — no bundler, no CDN, runs 100 % offline (double-click `index.html`).
+A cel-shaded 1v1 street-football game with the genre's arcade feel: heavy, snappy players under a floaty ball. Play against a relaxed CPU — it jogs rather than sprints (≈ 78 % of your pace), reacts a beat late, hesitates before it kicks and shoots a little softer (`KL.TUNING.ai.level`) — but never plays the same twice (`KL.TUNING.ai`): it waits a random beat at the whistle, picks a plan each time it wins the ball (dribble it up in little hops and shoot from a range of its choosing, shoot at once, or chip it long), times its headers off the ball's flight, and pops a reaction over its head after a goal. 90-second matches, driven shots, long balls, headers, sprint, and a charged Super Skill. Built with vendored Phaser 3, plain HTML/CSS/JS — no bundler, no CDN, runs 100 % offline (double-click `index.html`).
 
 ## Play
 
@@ -29,16 +29,18 @@ Menus also take W/S or arrows + Enter, and the mouse.
 ### Match rules at a glance
 
 - 90-second match; a draw goes to 30 s of sudden death (next goal wins).
-- Players always face the opponent's goal and backpedal; bodies block the ball, heads bounce it.
+- Players always face the opponent's goal and backpedal; bodies block the ball, heads bounce it. Run onto a ball on the turf and each touch pops it ahead in a little hop: a dribble goes hop-hop-hop up the pitch.
+- Restarts come from the sky: through the countdown the ball waits behind the timer at the top of the screen and drops out at the whistle — straight onto the centre spot at kickoff; after a goal it drifts towards whoever conceded and comes down on their side of the centre.
 - Kicks fill the Super meter (conceding fills it faster). A Super shot is a fireball that knocks down anyone it hits.
 - Two kicks on the same touch clash and pop the ball straight up; a ball parked on a crossbar rolls off.
 
 ### Kicking and the ball
 
-- **J — straight kick.** A driven shot that skims the turf (about 15°, dipping on its topspin): centre circle to goal in about half a second, and from your own box it still rolls into the far goal. Use it to shoot.
-- **K — long kick.** A lofted ball (about 38°) that climbs ~200 px, over a standing rival and about bar height, and carries ~950 px before it lands, held up by backspin; it checks when it lands. Use it to clear, to switch play, or to beat the keeper from your own half. In the air, K is a header, aimed by where the ball meets the head (meet it under its middle to nod it down).
-- **Snappy strikes.** The boot meets the ball about 4 frames (~67 ms) after the key. Run onto the ball to hit it harder: your run-up goes into the strike, and you carry on through it at a stride's pace instead of stopping dead. A kick or jump pressed a moment early (still finishing a kick) is buffered, and once the follow-through is done you can run, jump or kick again straight away.
+- **J — straight kick.** A driven shot that skims the turf (about 15°, dipping on its topspin): centre circle to goal in about 0.8 s, and from your own box it still rolls into the far goal. Use it to shoot.
+- **K — long kick.** A lofted ball (about 39°) that climbs ~210 px, over a standing rival and about bar height, and carries ~950 px before it lands (~1.7 s in the air), held up by backspin; it checks when it lands. Use it to clear, to switch play, or to beat the keeper from your own half. In the air, K is a header, aimed by where the ball meets the head (meet it under its middle to nod it down).
+- **Snappy strikes.** The boot meets the ball about 4 frames (~67 ms) after the key, and the whole body swings through it: rocked back on the wind-up, whipped forward at the contact (a header nods into the ball). Run onto the ball to hit it harder: your run-up goes into the strike, and you carry on through it at a stride's pace instead of stopping dead. A kick or jump pressed a moment early (still finishing a kick) is buffered, and once the follow-through is done you can run, jump or kick again straight away.
 - **Real ball physics** (`js/systems/BallPhysics.js`, numbers in `KL.TUNING.ball`): quadratic air drag, the Magnus swerve of the ball's spin, rolling resistance on the turf and the skid of each bounce (spin traded for pace). The CPU reads the ball with the same model, and before it strikes it plays both kicks forward to pick the one that would beat the goal.
+- **Arcade float.** The players fall under strong gravity (a jump is ~140 px, up and down in ~0.6 s) while the ball hangs: every flight keeps the shape of a real strike but plays out 1.45× slower (`BALL_TIME` in `js/data/tuning.js`: ball speeds ÷ it, ball accelerations ÷ its square), so there's time to read it, get under it and head or volley it. `BALL_TIME = 1` gives back the real-football pace exactly. Where a body meets the ball, the ball feels the body's run in its own time and only part of a jump, so nobody heads it out of the stadium.
 
 ## Folder structure
 

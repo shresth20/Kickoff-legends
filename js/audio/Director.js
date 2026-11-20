@@ -35,6 +35,8 @@ KL.AudioDirector = class AudioDirector {
   constructor(scene, bus) {
     this.scene = scene;
     this.A = KL.audio;
+    // the ball plays on a stretched clock (KL.TUNING.ball.time); the sounds are tuned to its real pace
+    this.ballTime = KL.TUNING?.ball?.time ?? 1;
     this.lastFrame = [-1, -1];
     this.superReady = [false, false];
     this.shot = null;
@@ -87,7 +89,8 @@ KL.AudioDirector = class AudioDirector {
 
   kick(e) {
     const A = this.A, s = this.scene, pl = s.players[e.player];
-    const speed = s.ball?.body?.velocity.length() ?? 900;
+    const v = s.ball?.body?.velocity.length();
+    const speed = v === undefined ? 900 : v * this.ballTime;
     const name = { low: 'kick_low', high: 'kick_long', header: 'header', clash: 'kick_clash', super: 'kick_super' }[e.kind] || 'kick_low';
     A.play(name, { x: e.x, power: KL.AudioKit.clamp(speed / 1100, 0.35, 1.4) });
     const id = pl.def.id;
@@ -218,7 +221,7 @@ KL.AudioDirector = class AudioDirector {
     const W = KL.TUNING.world;
     const still = s.paused || s.ended;
     const v = ball.body.velocity;
-    const speed = still ? 0 : Math.hypot(v.x, v.y);
+    const speed = still ? 0 : Math.hypot(v.x, v.y) * this.ballTime;
     const air = ball.y < W.groundY - KL.TUNING.ball.radius - 12;
     const k = K.clamp((speed - 600) / 1100, 0, 1);
     this.whooshG.gain.setTargetAtTime(k * k * (air ? 0.34 : 0.12) * (ball.isSuper ? 1.5 : 1), t, 0.04);
