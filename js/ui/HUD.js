@@ -7,7 +7,9 @@
  * corners — all inside the safe area — and a phone shows it all scaled up (KL.View.ui). */
 window.KL = window.KL || {};
 
-/** Scoreboard geometry in logical px, relative to the plate centre (x = screen centre, y below the top safe edge). */
+/** Scoreboard geometry in logical px, relative to the plate centre (x = screen centre, y below the
+ * top safe edge). The numbers at the top level are the plate painted in code, used when the atlas
+ * has no scoreboard art. */
 KL.HUD_SCOREBOARD = {
   version: 1, // bump to repaint after changing the numbers below
   y: 62,
@@ -18,6 +20,19 @@ KL.HUD_SCOREBOARD = {
   boxX: 96, boxW: 64, boxH: 54, // score boxes (centre x)
   plateIn: 142, plateOut: 318, plateH: 42, // name bars
   flagX: 346, flagR: 31, // flag sockets
+  /**
+   * The scoreboard art (ui:ui_hud_scoreboard): shown `w` logical px wide, its centre `y` below the
+   * top safe edge. Its slots are measured on the source art, `src` px wide, in source px from its
+   * centre (x: the right-hand slot, mirrored on the left; y: down).
+   */
+  art: {
+    w: 740, y: 73, src: 2145,
+    flag: { x: 941, y: 3, r: 92 }, // white sockets
+    name: { x: 620, y: 4, w: 340 }, // navy bars, inside the slant
+    score: { x: 254, y: -14, w: 150 }, // purple boxes, on the face above the lip
+    clock: { y: -32, w: 250 }, labelY: 84, labelW: 150, // gold shield
+    barY: 155, // CPU super bar, under the right-hand name bar
+  },
 };
 
 KL.HUDScene = class HUDScene extends Phaser.Scene {
@@ -37,36 +52,34 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
     const cx = W.width / 2;
     this.offs = [];
 
-    // Scoreboard plate, painted in code (see paintScoreboard): every slot below has a fixed,
-    // measured size, and the text placed in it is shrunk to fit so nothing spills or gets cut.
-    // One container, laid out around the plate centre, so it can be anchored and scaled as a whole.
-    const SB = KL.HUD_SCOREBOARD;
-    const sb = (this.scoreboard = this.add.container(cx, SB.y));
+    // Scoreboard plate: the art, or painted in code (see paintScoreboard) when the atlas lacks it.
+    // Every slot below has a fixed, measured size, and the text placed in it is shrunk to fit so
+    // nothing spills or gets cut. One container, laid out around the plate centre, so it can be
+    // anchored and scaled as a whole.
+    const S = (this.slots = this.scoreboardSlots());
+    const sb = (this.scoreboard = this.add.container(cx, S.y));
     const add = (o) => (sb.add(o), o);
-    add(KL.Paint.place(this, 0, 0, this.paintScoreboard()));
+    if (S.art) {
+      const plate = add(this.add.image(0, 0, 'ui', 'ui_hud_scoreboard'));
+      plate.setScale(KL.HUD_SCOREBOARD.art.w / plate.frame.cutWidth);
+    } else add(KL.Paint.place(this, 0, 0, this.paintScoreboard()));
     for (const [i, sgn] of [[0, -1], [1, 1]]) {
       const fr = `flag_${this.defs[i].flag}`;
-      if (KL.hasUiFrame(this, fr)) {
-        const f = add(this.add.image(sgn * SB.flagX, 0, 'ui', fr));
-        KL.fit(f, SB.flagR * 2 - 6, SB.flagR * 2 - 6);
-      }
+      if (KL.hasUiFrame(this, fr)) KL.fit(add(this.add.image(sgn * S.flagX, S.flagY, 'ui', fr)), S.flagD, S.flagD);
     }
-    const nameX = (SB.plateIn + SB.plateOut) / 2 + 4;
-    const nameW = SB.plateOut - SB.plateIn - 34;
-    add(KL.fitText(KL.bodyText(this, -nameX, 0, this.defs[0].name, 19, '#ffffff', { weight: 'heavy' }), nameW));
-    add(KL.fitText(KL.bodyText(this, nameX, 0, `CPU ${this.defs[1].name}`, 19, '#ffffff', { weight: 'heavy' }), nameW));
-    this.scoreBoxW = SB.boxW - 12;
-    this.scoreL = add(KL.displayText(this, -SB.boxX, 0, '0', 40, '#ffffff'));
-    this.scoreR = add(KL.displayText(this, SB.boxX, 0, '0', 40, '#ffffff'));
-    this.clock = add(KL.displayText(this, 0, -9, String(KL.TUNING.match.durationSec), 46, '#1B1F3B', { style: { stroke: '#ffffff', strokeThickness: 5, shadow: { offsetX: 0, offsetY: 0 } } }));
-    this.clockLabel = add(KL.fitText(KL.bodyText(this, 0, 29, KL.t('hud_time'), 11, '#1B1F3B', { weight: 'heavy' }), SB.shieldW * 0.5));
+    add(KL.fitText(KL.bodyText(this, -S.nameX, S.nameY, this.defs[0].name, 19, '#ffffff', { weight: 'heavy' }), S.nameW));
+    add(KL.fitText(KL.bodyText(this, S.nameX, S.nameY, `CPU ${this.defs[1].name}`, 19, '#ffffff', { weight: 'heavy' }), S.nameW));
+    this.scoreL = add(KL.displayText(this, -S.scoreX, S.scoreY, '0', 40, '#ffffff'));
+    this.scoreR = add(KL.displayText(this, S.scoreX, S.scoreY, '0', 40, '#ffffff'));
+    this.clock = add(KL.displayText(this, 0, S.clockY, String(KL.TUNING.match.durationSec), 46, '#1B1F3B', { style: { stroke: '#ffffff', strokeThickness: 5, shadow: { offsetX: 0, offsetY: 0 } } }));
+    this.clockLabel = add(KL.fitText(KL.bodyText(this, 0, S.labelY, KL.t('hud_time'), 11, '#1B1F3B', { weight: 'heavy' }), S.labelW));
 
     // on-screen controller (keys shown on every button; touch / mouse playable)
     this.match = this.scene.get('Match');
     const live = () => !this.match.paused && !this.match.ended;
     this.controls = new KL.TouchControls(this, { pads: this.pads, isLive: live });
     // the CPU has no buttons: its super charge is a slim bar under its name plate
-    this.cpuBar = this.buildCpuBar(nameX - 6, SB.plateH / 2 + 13, nameW + 6);
+    this.cpuBar = this.buildCpuBar(S.nameX - 6, S.barY, S.nameW + 6);
 
     // reactions drawer + pause for touch screens
     this.drawers = [new KL.EmoteDrawer(this, { x: 46, y: 160, dir: 1, isLive: live, onPick: (index) => this.bus.emit('EMOTE', { player: 0, index }) })];
@@ -113,10 +126,38 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
     const SB = KL.HUD_SCOREBOARD;
     const u = V.ui;
     const hs = 1 + (u - 1) * SB.phoneScale; // scoreboard scale
-    this.scoreboard.setPosition(KL.TUNING.world.width / 2, V.top + SB.y * hs).setScale(hs);
+    this.scoreboard.setPosition(KL.TUNING.world.width / 2, V.top + this.slots.y * hs).setScale(hs);
     this.pauseButton.setPosition(V.right - 46 * u, V.top + 46 * u).setBaseScale(u);
     this.drawers[0].setLayout(V.left + 46 * u, V.top + 160 * hs, u);
     this.controls.layout(V);
+  }
+
+  /**
+   * Where the flags, names, scores, clock and CPU bar go on the plate (logical px from its centre;
+   * x of the right-hand slot, mirrored on the left): measured on the art (KL.HUD_SCOREBOARD.art)
+   * when the atlas has it, else the painted plate's.
+   */
+  scoreboardSlots() {
+    const SB = KL.HUD_SCOREBOARD;
+    if (KL.hasUiFrame(this, 'ui_hud_scoreboard')) {
+      const A = SB.art, k = A.w / A.src;
+      return {
+        art: true, y: A.y,
+        flagX: A.flag.x * k, flagY: A.flag.y * k, flagD: (A.flag.r * 2 - 10) * k,
+        nameX: A.name.x * k, nameY: A.name.y * k, nameW: A.name.w * k,
+        scoreX: A.score.x * k, scoreY: A.score.y * k, scoreW: A.score.w * k,
+        clockY: A.clock.y * k, clockW: A.clock.w * k, labelY: A.labelY * k, labelW: A.labelW * k,
+        barY: A.barY * k,
+      };
+    }
+    return {
+      art: false, y: SB.y,
+      flagX: SB.flagX, flagY: 0, flagD: SB.flagR * 2 - 6,
+      nameX: (SB.plateIn + SB.plateOut) / 2 + 4, nameY: 0, nameW: SB.plateOut - SB.plateIn - 34,
+      scoreX: SB.boxX, scoreY: 0, scoreW: SB.boxW - 12,
+      clockY: -9, clockW: SB.shieldW - 16, labelY: 29, labelW: SB.shieldW * 0.5,
+      barY: SB.plateH / 2 + 13,
+    };
   }
 
   /** One texture for the whole plate: flag sockets, slanted name bars, score boxes, timer shield. */
@@ -301,12 +342,12 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
 
   setScore(t, v) {
     t.setText(String(v));
-    KL.fitText(t, this.scoreBoxW);
+    KL.fitText(t, this.slots.scoreW);
   }
 
   setClock(sec, sudden) {
     this.clock.setText(String(sec));
-    KL.fitText(this.clock, KL.HUD_SCOREBOARD.shieldW - 16);
+    KL.fitText(this.clock, this.slots.clockW);
     this.clock.setColor(sudden ? '#e63946' : sec <= 10 ? '#e63946' : '#1B1F3B');
     if (sec <= 10 && sec > 0) this.pop(this.clock, 1.15);
   }

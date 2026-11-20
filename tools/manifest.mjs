@@ -100,10 +100,17 @@ export const ASSETS = [
   { name: 'new-pitch', kind: 'background', outs: ['bg_pitch'] },
   { name: 'bg_sky_night', kind: 'background' },
 
-  // Buttons, panels, cards, key caps, the HUD scoreboard and the super-meter ring are NOT sliced from
-  // art any more: js/ui/Paint.js draws them in code at screen resolution (the raw ui_buttons,
-  // ui_panel_and_cards, ui_keycaps, ui_hud_scoreboard and ui_super_ring sheets are unused).
+  // Buttons, panels, cards and key caps are NOT sliced from art any more: js/ui/Paint.js draws them in
+  // code at screen resolution (the raw ui_buttons, ui_panel_and_cards and ui_keycaps sheets are unused).
   { name: 'ui_logo', kind: 'single', atlas: 'ui', keepAspect: true, out: 'ui_logo', maxSize: 1600 },
+  // the match HUD's scoreboard plate (js/ui/HUD.js places the flags, names, scores and clock on it
+  // from slots measured on this art: KL.HUD_SCOREBOARD.art). Kept near full size: it is shown
+  // ~740 logical px wide, ~2200 device px on a 3× screen.
+  { name: 'ui_hud_scoreboard', kind: 'single', atlas: 'ui', keepAspect: true, out: 'ui_hud_scoreboard', maxSize: 2040 },
+  // the Super button's charge ring (00) and its charged coin (02), one shared scale and centre so they
+  // swap in place (js/ui/TouchControls.js). The plain filled coin (01) is never shown.
+  // key 'glow': the charged coin's soft orange glow is blended with the magenta (keyGlow)
+  { name: 'ui_super_ring', kind: 'strip', atlas: 'ui', cols: 3, cell: 640, pivot: 'center', out: 'ui_super_ring', skip: [1], key: 'glow' },
   // icons 01, 02 and 06 are never shown; only the four characters' flags are (KL.CHARACTERS[].flag)
   { name: 'ui_icons', kind: 'strip', atlas: 'ui', cols: 12, cell: 192, pivot: 'center', out: 'ui_icons', skip: [1, 2, 6] },
   { name: 'ui_flags', kind: 'strip', atlas: 'ui', cols: 8, cell: 160, pivot: 'center', out: 'ui_flags', names: ['flag_eng', 'flag_bra', 'flag_esp', 'flag_ger', 'flag_ind', 'flag_jpn', 'flag_arg', 'flag_fra'], skip: [3, 4, 6, 7] },

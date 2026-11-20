@@ -14,7 +14,8 @@
  * the players or a ball on the ground. Like a native game's pad, each hand's cluster keeps to its
  * corner of the screen (inside the safe area) on any screen shape, and on a phone the whole pad is
  * scaled up to thumb size (KL.View.ui). On touch screens the faces drop the key names (icons only).
- * Faces are painted in code (KL.Paint) at device resolution and cached per label / size / state. */
+ * Faces are painted in code (KL.Paint) at device resolution and cached per label / size / state;
+ * the Super button's charge ring and its charged coin are art (ui_super_ring) when the atlas has it. */
 window.KL = window.KL || {};
 
 /**
@@ -46,7 +47,10 @@ KL.PAD_LAYOUT = {
   // narrow screen the pad scale is capped so the hands never meet
   span: 1000,
   skew: 0.28, // slant of the kick buttons: top edge shifted by skew × h
-  meter: { gap: 9, width: 7 }, // super charge ring outside the button
+  meter: { gap: 9, width: 7 }, // super charge ring outside the button (painted, when the ring art is missing)
+  // the Super button's charge ring art (ui_super_ring): its outer radius as a multiple of the
+  // button's, and its hole and gold band as shares of that radius (measured on the art)
+  ring: { outer: 1.43, hole: 0.695, band: [0.75, 0.94] },
   flashMs: 110, // a quick tap keeps its button lit at least this long
 };
 
@@ -373,24 +377,27 @@ KL.PAD_LAYOUT = {
     return { key, ox: 0.5, oy: (M + h / 2) / th };
   }
 
-  /** Round Super button, the base layer: charge track, then a dark ember disc with a hot rim and a
-   * glow where the fire stands. The fire (superFire) and the key (superKey) are layered on top, so
-   * the flames can flicker while the key holds still. */
+  /** Round Super button, the base layer: charge track (unless the ring art frames the button, see
+   * superTrack), then a dark ember disc with a hot rim and a glow where the fire stands. The fire
+   * (superFire) and the key (superKey) are layered on top, so the flames can flicker while the key
+   * holds still. */
   function superLook(scene, b, lit) {
     const L = KL.PAD_LAYOUT;
     const r = b.r, ring = r + L.meter.gap, S = ring + L.meter.width / 2 + 5;
-    const key = P().paint(scene, `kl:pad:super:${v()}:${r}:${lit}`, S * 2, S * 2, (ctx) => {
+    const key = P().paint(scene, `kl:pad:super:${v()}:${r}:${lit}:${b.ringArt ? 'art' : 'track'}`, S * 2, S * 2, (ctx) => {
       ctx.translate(S, S);
       const C = P().circle;
-      // charge track
-      C(ctx, 0, 0, ring);
-      ctx.lineWidth = L.meter.width + 5;
-      ctx.strokeStyle = INK;
-      ctx.stroke();
-      C(ctx, 0, 0, ring);
-      ctx.lineWidth = L.meter.width;
-      ctx.strokeStyle = '#2A2F5C';
-      ctx.stroke();
+      if (!b.ringArt) {
+        // charge track
+        C(ctx, 0, 0, ring);
+        ctx.lineWidth = L.meter.width + 5;
+        ctx.strokeStyle = INK;
+        ctx.stroke();
+        C(ctx, 0, 0, ring);
+        ctx.lineWidth = L.meter.width;
+        ctx.strokeStyle = '#2A2F5C';
+        ctx.stroke();
+      }
       // disc
       ctx.save();
       ctx.shadowColor = 'rgba(4,8,20,0.5)';
@@ -427,6 +434,24 @@ KL.PAD_LAYOUT = {
       ctx.ellipse(0, -r * 0.62, r * 0.78, r * 0.36, 0, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
+    });
+    return { key, ox: 0.5, oy: 0.5 };
+  }
+
+  /** The dark socket under the ring art (KL.PAD_LAYOUT.ring): ink where the art is, a navy band
+   * where its gold runs. The art's gold is revealed over it as the Super charges. */
+  function superTrack(scene, b) {
+    const G = KL.PAD_LAYOUT.ring, R = b.r * G.outer, S = R + 2;
+    const key = P().paint(scene, `kl:pad:supertrack:${v()}:${b.r}`, S * 2, S * 2, (ctx) => {
+      ctx.translate(S, S);
+      const band = (r0, r1, style) => {
+        P().circle(ctx, 0, 0, (r0 + r1) / 2);
+        ctx.lineWidth = r1 - r0;
+        ctx.strokeStyle = style;
+        ctx.stroke();
+      };
+      band(R * G.hole, R, INK);
+      band(R * G.band[0], R * G.band[1], '#2A2F5C');
     });
     return { key, ox: 0.5, oy: 0.5 };
   }
@@ -535,6 +560,8 @@ KL.PAD_LAYOUT = {
       if (spec.look === 'super') {
         b.glow = KL.Paint.place(s, 0, 0, KL.Paint.glow(s, Math.round(spec.r * 1.9), 'rgba(255,140,26,0.9)')).setVisible(false);
         b.root.add(b.glow);
+        b.ringArt = KL.hasUiFrame(s, 'ui_super_ring/00') && KL.hasUiFrame(s, 'ui_super_ring/02');
+        if (b.ringArt) b.root.add((b.track = KL.Paint.place(s, 0, 0, superTrack(s, b))));
       }
       b.looks = [false, true].map((lit) => LOOKS[spec.look](s, b, lit));
       b.face = KL.Paint.place(s, 0, 0, b.looks[0]);
@@ -544,8 +571,22 @@ KL.PAD_LAYOUT = {
         b.fireY = fire.y;
         b.fire = KL.Paint.place(s, 0, fire.y, fire);
         b.keyCap = KL.Paint.place(s, 0, 0, superKey(s, b));
-        b.meter = s.add.graphics();
-        b.root.add([b.fire, b.keyCap, b.meter]);
+        if (b.ringArt) {
+          // the ring art frames the button; its gold shows as far round as the Super has charged
+          // (a pie mask, redrawn by setSuper), and the charged coin stands in for the button once
+          // the Super is ready. Both frames share one scale and centre.
+          b.ring = s.add.image(0, 0, 'ui', 'ui_super_ring/00');
+          b.ringK = (b.r * KL.PAD_LAYOUT.ring.outer) / (b.ring.frame.cutWidth / 2);
+          b.ring.setScale(b.ringK);
+          // not on the display list: a mask is drawn in world space, so update() keeps it on the button
+          b.ringMask = s.make.graphics({}, false);
+          b.ring.setMask(b.ringMask.createGeometryMask());
+          b.coin = s.add.image(0, 0, 'ui', 'ui_super_ring/02').setScale(b.ringK).setVisible(false);
+          b.root.add([b.fire, b.ring, b.coin, b.keyCap]);
+        } else {
+          b.meter = s.add.graphics();
+          b.root.add([b.fire, b.keyCap, b.meter]);
+        }
       }
       return b;
     }
@@ -603,8 +644,10 @@ KL.PAD_LAYOUT = {
           const k = (lit ? 0.94 : 1) / KL.UIRES;
           b.face.setTexture(look.key).setOrigin(look.ox, look.oy).setScale(k);
           b.keyCap?.setScale(k);
+          b.coin?.setScale(b.ringK * (lit ? 0.94 : 1));
         }
         if (b.fire) this.flicker(b, now);
+        b.ringMask?.setPosition(b.root.x, b.root.y).setScale(b.root.scaleX);
       }
     }
 
@@ -626,11 +669,21 @@ KL.PAD_LAYOUT = {
       b.value = value;
       if (ready !== b.ready) {
         b.ready = ready;
+        if (b.coin) for (const o of [b.track, b.face, b.fire, b.ring]) o.setVisible(!ready);
+        b.coin?.setVisible(ready);
         this.pulse(b);
+      }
+      const p = Phaser.Math.Clamp(value / max, 0, 1);
+      if (b.ringMask) {
+        // reveal the ring's gold clockwise from the top
+        const g = b.ringMask, R = b.r * KL.PAD_LAYOUT.ring.outer + 4;
+        g.clear().fillStyle(0xffffff, 1);
+        if (p >= 1) g.fillCircle(0, 0, R);
+        else if (p > 0) g.slice(0, 0, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * p, false).fillPath();
+        return true;
       }
       const g = b.meter, M = KL.PAD_LAYOUT.meter, R = b.r + M.gap;
       g.clear();
-      const p = Phaser.Math.Clamp(value / max, 0, 1);
       if (p > 0) {
         const a0 = -Math.PI / 2, a1 = a0 + Math.PI * 2 * p;
         g.lineStyle(M.width - 1, ready ? 0xff8c1a : KL.PAL.gold, 1);
@@ -664,6 +717,7 @@ KL.PAD_LAYOUT = {
       input?.off('pointerupoutside', this.onUp);
       this.scene.game?.events.off(Phaser.Core.Events.BLUR, this.onBlur);
       this.releaseAll();
+      for (const b of this.buttons) b.ringMask?.destroy(); // off the display list: the scene won't free it
     }
   };
 })();

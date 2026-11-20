@@ -57,13 +57,64 @@ const pad2 = (i) => String(i).padStart(2, '0');
 
 /* ------------------------------------------------------------------ image ops */
 
-/** Load as RGBA and key magenta → alpha (key: true | 'unmix', see unmixMagenta). Returns {data, width, height}. */
+/** Load as RGBA and key magenta → alpha (key: true | 'unmix' | 'glow', see unmixMagenta / keyGlow). Returns {data, width, height}. */
 async function loadKeyed(file, { key = true } = {}) {
   const img = sharp(file).ensureAlpha();
   const { data, info } = await img.raw().toBuffer({ resolveWithObject: true });
   if (key === 'unmix') unmixMagenta(data);
+  else if (key === 'glow') keyGlow(data, info.width, info.height);
   else if (key) keyMagenta(data);
   return { data, width: info.width, height: info.height };
+}
+
+/**
+ * Key for art with a soft warm glow around its outline (the charged Super coin): the glow (orange
+ * fading to a white rim) is blended into the magenta, which the plain key leaves as a pink halo.
+ * A pixel is a·colour + (1−a)·magenta; magenta has no green and full blue, so the least alpha that
+ * explains it is a = max(green / 255, 1 − blue / 255), and the colour is recovered by taking the
+ * magenta back out. That reading is only right for the glow (it would thin out the art's own pinks
+ * and purples), so it applies to the pixels reachable from the sheet's border without crossing an
+ * ink outline; the rest gets the plain key.
+ */
+function keyGlow(data, width, height) {
+  const n = width * height;
+  const outside = new Uint8Array(n);
+  const open = (p) => data[p * 4] > 200; // glow and background are all full red; ink outlines are not
+  const stack = [];
+  for (let x = 0; x < width; x++) stack.push(x, (height - 1) * width + x);
+  for (let y = 0; y < height; y++) stack.push(y * width, y * width + width - 1);
+  while (stack.length) {
+    const p = stack.pop();
+    if (outside[p] || !open(p)) continue;
+    outside[p] = 1;
+    const x = p % width;
+    if (x > 0) stack.push(p - 1);
+    if (x < width - 1) stack.push(p + 1);
+    if (p >= width) stack.push(p - width);
+    if (p < n - width) stack.push(p + width);
+  }
+  const px = new Uint8Array(4);
+  for (let p = 0; p < n; p++) {
+    const i = p * 4, r = data[i], g = data[i + 1], b = data[i + 2];
+    if (!outside[p]) {
+      px.set(data.subarray(i, i + 4));
+      keyMagenta(px);
+      data.set(px, i);
+      continue;
+    }
+    const a = Math.max(g / 255, 1 - b / 255);
+    // the flat background (a ≤ 0.07) and stray specks near it (a sheet corner reads ~0.15) fade out
+    const k = Math.min(1, Math.max(0, (a - 0.15) / 0.1));
+    if (k === 0) {
+      data[i + 3] = 0;
+      continue;
+    }
+    const un = (v) => Math.min(255, Math.max(0, Math.round((v - (1 - a) * 255) / a)));
+    data[i] = un(r);
+    data[i + 1] = Math.min(255, Math.round(g / a));
+    data[i + 2] = un(b);
+    data[i + 3] = Math.round(data[i + 3] * a * k);
+  }
 }
 
 /**
@@ -710,7 +761,7 @@ async function processAsset(spec) {
     }
     return;
   }
-  const img = await loadKeyed(file);
+  const img = await loadKeyed(file, { key: spec.key ?? true });
   const content = bbox(img);
   if (!content) throw new Error(`${spec.name}: nothing left after keying`);
   if (spec.kind === 'goal') {
