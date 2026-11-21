@@ -1,13 +1,11 @@
-/* Boot: the loading screen. Tries to load the sliced atlases, backgrounds and welcome art from
- * assets/images, while a football rolls along the loading line (KL.BallLoader). Any file that is
- * missing (404 / file:// block) is replaced by procedural placeholder art, so the game always boots.
+/* Boot: the loading screen. Loads every image the game uses (KL.bootAssets, js/core/Assets.js: the
+ * sliced atlases, backgrounds, welcome art and controller art from assets/images) while a football
+ * rolls along the loading line (KL.BallLoader); nothing is loaded after it. Any file that is missing
+ * (404 / file:// block) is replaced by procedural placeholder art, so the game always boots.
  * Once everything is loaded and ready to draw, "Tap to start" takes the line's place: that tap (or a
  * click / any key) unlocks the audio, so the welcome screen (Menu) opens with its music, and takes a
  * phone full screen (KL.Fullscreen). */
 window.KL = window.KL || {};
-
-/** The sliced atlases (tools/slice-sheet.mjs); crowd = the fans of the stands. */
-KL.ATLAS_KEYS = ['characters', 'props', 'ui', 'fx', 'crowd'];
 
 /**
  * Canvas renderer only (file://): the browser decodes an <img> lazily, on the frame it is first drawn,
@@ -124,40 +122,27 @@ KL.BootScene = class BootScene extends Phaser.Scene {
     this.load.on('loaderror', (file) => {
       this.missing = this.missing || new Set();
       this.missing.add(file.key);
+      // a file of the living sky's split didn't load: the stadium shows the painted sky it was cut
+      // from instead (js/ui/SkyLife.js), so load that (a loader still running takes new files)
+      for (const [key, sky] of Object.entries(window.KL_SKY || {})) {
+        if (file.key === sky.clear || file.key === sky.sheet) this.load.image(key, KL.backgroundUrl(key));
+      }
     });
 
-    // Real art. Atlas JSON comes from window.KL_ATLASES (atlas .js files) so file:// works.
-    // A big atlas (characters) is split into several pages; each page image loads separately.
-    const img = 'assets/images';
-    for (const key of KL.ATLAS_KEYS) {
-      [].concat(window.KL_ATLASES?.[key] || []).forEach((page, i) => this.load.image(`atlas_${key}_${i}`, `${img}/atlases/${page.meta.image}`));
+    // Real art (KL.bootAssets). The atlas JSON comes from window.KL_ATLASES (atlas .js files), so
+    // file:// works. Each atlas loads as a Phaser multi-atlas (a big one, characters, is split into
+    // several pages): every page image goes to the GPU once, as that atlas's texture.
+    const art = KL.bootAssets();
+    for (const { key, pages } of art.atlases) {
+      const textures = pages.map((p) => ({ ...p.meta, frames: Object.entries(p.frames).map(([filename, f]) => ({ filename, ...f })) }));
+      this.load.multiatlas(key, { textures }, art.atlasDir);
     }
-    for (const key of ['bg_sky', 'bg_sky_night', 'bg_stands', 'bg_fence', 'bg_pitch']) {
-      this.load.image(key, `${img}/backgrounds/${key}.webp`);
-    }
-    // living sky: clear skies + cloud sheets (window.KL_SKY from sky.js; harmless if missing)
-    for (const sky of Object.values(window.KL_SKY || {})) {
-      for (const key of [sky.clear, sky.sheet].filter(Boolean)) this.load.image(key, `${img}/backgrounds/${key}.webp`);
-    }
-    // the welcome screen: backdrop, logo and the logo's spinning football (tools/make-welcome.mjs)
-    for (const key of ['welcome_bg', 'welcome_logo', 'welcome_ball', 'welcome_ball_light']) this.load.image(key, `${img}/welcome/${key}.webp`);
-    // the controller's buttons (tools/make-pad.mjs; without them js/ui/TouchControls.js paints its own)
-    if (window.KL_PAD_ART) this.load.image('pad_art', `${img}/pad/pad.webp`);
+    for (const [key, url] of art.images) this.load.image(key, url);
   }
 
   create() {
     // Stop arrow keys / space / numpad from scrolling the page (Phaser-side capture keeps its own listeners first).
     this.input.keyboard.addCapture(['UP', 'DOWN', 'LEFT', 'RIGHT', 'SPACE', 'SHIFT', 'CTRL', 'NUMPAD_ZERO', 'NUMPAD_ONE', 'NUMPAD_TWO', 'NUMPAD_THREE']);
-    const atlases = window.KL_ATLASES || {};
-    for (const key of KL.ATLAS_KEYS) {
-      const pages = [].concat(atlases[key] || []);
-      const temp = pages.map((_, i) => `atlas_${key}_${i}`);
-      if (pages.length && temp.every((t) => this.textures.exists(t))) {
-        // one texture key, one source image per page (Phaser multi-atlas)
-        this.textures.addAtlasJSONHash(key, temp.map((t) => this.textures.get(t).getSourceImage()), pages);
-      }
-      temp.forEach((t) => this.textures.exists(t) && this.textures.remove(t));
-    }
     const realAtlases = KL.ATLAS_KEYS.filter((k) => this.textures.exists(k)).length;
     KL.Placeholders.makeAll(this); // fills whatever is still missing
     KL.artSource = realAtlases === KL.ATLAS_KEYS.length ? 'studio' : realAtlases > 0 ? 'mixed' : 'placeholder';

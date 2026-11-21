@@ -420,8 +420,9 @@ KL.Stadium = {
     const still = KL.SkyLife?.still; // OS "reduce motion": no jumping, waving or flashing
 
     // living sky: when the painted sky has been split (tools/sky-split.mjs), show its clear version
-    // and let SkyLife put the clouds back as drifting sprites
-    const skyKey = night && has('bg_sky_night') ? 'bg_sky_night' : 'bg_sky';
+    // and let SkyLife put the clouds back as drifting sprites (a split sky's painted original is not
+    // loaded at all: KL.bootAssets)
+    const skyKey = night && (has('bg_sky_night') || KL.SkyLife.data(scene, 'bg_sky_night')) ? 'bg_sky_night' : 'bg_sky';
     const skyData = KL.SkyLife.data(scene, skyKey);
     const layers = {
       sky: big(skyData ? skyData.clear : skyKey, L.sky, 0),

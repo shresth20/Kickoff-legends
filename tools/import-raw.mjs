@@ -45,5 +45,5 @@ if (missing.length) {
   console.log('Generate the missing ones from the prompt table in the plan, download, and re-run.');
   process.exitCode = 1;
 } else {
-  console.log('all raw assets present — run: npm run assets:build');
+  console.log('all raw assets present — run: node tools/slice-sheet.mjs');
 }

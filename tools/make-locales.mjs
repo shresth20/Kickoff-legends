@@ -2,7 +2,7 @@
 /**
  * Wraps locales/locales.json into locales/locales.js (window.LOCALES = …) so the
  * game can run from file:// without XHR. Run after editing locales.json:
- *   npm run locales:build
+ *   node tools/make-locales.mjs
  * Also validates that every non-en locale has the same keys as en.
  */
 import { readFileSync, writeFileSync } from 'node:fs';

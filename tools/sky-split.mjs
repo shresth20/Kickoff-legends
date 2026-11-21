@@ -3,7 +3,7 @@
  * Living sky, art side: splits each painted sky into a clear sky plus the things that move in it,
  * so js/ui/SkyLife.js can animate them.
  *
- *   node tools/sky-split.mjs            (also runs at the end of `npm run assets:build`)
+ *   node tools/sky-split.mjs            (also runs at the end of `node tools/slice-sheet.mjs`)
  *
  * Input: the raw <sky>.png in assets/source/ when present (full quality, found by rawFile), else the
  * strip slice-sheet.mjs wrote to assets/images/backgrounds/<sky>.webp.
