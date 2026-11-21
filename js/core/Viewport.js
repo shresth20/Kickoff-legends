@@ -226,8 +226,12 @@ window.KL = window.KL || {};
     get active() {
       return !!(document.fullscreenElement || document.webkitFullscreenElement);
     },
-    /** Launched from the home screen (PWA): already full screen. */
-    standalone: mq('(display-mode: fullscreen)') || mq('(display-mode: standalone)') || navigator.standalone === true,
+    /**
+     * Launched from the home screen (PWA): already full screen. A desktop browser window that is
+     * merely full screen itself (F11, macOS full screen) matches display-mode: fullscreen too, and
+     * there the page can still go full screen, so that query only counts on a phone or tablet.
+     */
+    standalone: navigator.standalone === true || mq('(display-mode: standalone)') || (touch && mq('(display-mode: fullscreen)')),
     /** The player left full screen with the in-game button: don't pull them back in on the next tap. */
     optOut: false,
     pending: false,

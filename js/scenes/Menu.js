@@ -38,6 +38,9 @@ KL.MenuScene = class MenuScene extends Phaser.Scene {
     }
     KL.Paint.playIcon(scene, Math.round(play.h * KL.PILL_KINDS.play.icon));
     KL.Paint.glow(scene, 128, MenuScene.GLOW);
+    // the full-screen button (top-right): its square face in every state, and both glyphs
+    for (const state of [0, 1, 2]) KL.Paint.button(scene, 'icon', state, 64, 64);
+    for (const exit of [false, true]) KL.Paint.fullscreenIcon(scene, KL.FULLSCREEN_ICON, exit);
   }
 
   create() {
@@ -93,8 +96,11 @@ KL.MenuScene = class MenuScene extends Phaser.Scene {
     this.nav = new KL.MenuNav(this, items, { grid: [[0], [1, 2]] });
     // Play breathes to invite the first tap
     if (!still) this.tweens.add({ targets: play, scaleX: 1.03, scaleY: 1.03, duration: KL.paced(900), yoyo: true, repeat: -1, ease: 'Sine.inOut' });
+    // full screen on / off in the top-right corner, on every device (an iPhone gets the how-to)
+    const fullscreen = KL.fullscreenButton(this, { iosHint: true });
 
     V.layout(this, (v) => {
+      fullscreen?.setPosition(v.right - 46 * v.ui, v.top + 46 * v.ui).setBaseScale(v.ui);
       if (bg) {
         // cover the whole view; keep the horizon where the art has it unless that would show an edge
         const s = Math.max(v.w / bg.width, v.h / bg.height), h = bg.height * s;

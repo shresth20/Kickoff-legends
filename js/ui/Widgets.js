@@ -387,18 +387,41 @@ window.KL = window.KL || {};
     }
   };
 
+  /** The full-screen button's icon size (KL.MenuScene.warm paints both glyphs ahead). */
+  KL.FULLSCREEN_ICON = 40;
+
   /**
-   * Full-screen on / off (square icon button, placed by the caller), or null where the page can't go
-   * full screen (iPhone Safari) or already is an installed full-screen app. Its glyph follows the state.
+   * Full-screen on / off (square icon button, placed by the caller): it shows "enter" in a window and
+   * "exit" in full screen, and follows the state however it changes (Esc, F11, a phone's back gesture).
+   * Null where the page already is an installed full-screen app (nothing to switch), and where the page
+   * can't go full screen at all (iPhone Safari) unless opts.iosHint: then the button is there all the
+   * same and a tap says how to get full screen on an iPhone (Share → Add to Home Screen).
    */
-  KL.fullscreenButton = (scene) => {
+  KL.fullscreenButton = (scene, opts = {}) => {
     const F = KL.Fullscreen;
-    if (!F?.supported || F.standalone) return null;
-    const spec = (on) => KL.Paint.fullscreenIcon(scene, 40, on);
-    const btn = new KL.Button(scene, 0, 0, '⛶', () => F.toggle(), { kind: 'icon', iconSpec: spec(F.active) }).setDepth(7);
+    if (!F || F.standalone) return null;
+    const hintOnly = !F.supported;
+    if (hintOnly && !(opts.iosHint && KL.View.ios)) return null;
+    const spec = (on) => KL.Paint.fullscreenIcon(scene, KL.FULLSCREEN_ICON, on);
+    const btn = new KL.Button(scene, 0, 0, '⛶', () => (hintOnly ? showHint() : F.toggle()), { kind: 'icon', iconSpec: spec(F.active) }).setDepth(7);
     const sync = (on) => btn.active && btn.setIconSpec(spec(on));
     KL.View.events.on('fullscreen', sync);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => KL.View.events.off('fullscreen', sync));
+
+    // iPhone: a note under the button, right-aligned with it, that fades away after a few seconds
+    let hint = null;
+    const showHint = () => {
+      if (hint?.active) return;
+      const b = btn.getBounds();
+      const text = KL.bodyText(scene, 0, 0, KL.t('fullscreen_hint_ios'), KL.View.font(16), '#ffffff', { originX: 1, originY: 0 });
+      const padX = 14, padY = 8, w = text.width + padX * 2, h = text.height + padY * 2;
+      const back = scene.add.graphics();
+      back.fillStyle(KL.PAL.navy, 0.92).fillRoundedRect(-w, 0, w, h, Math.min(14, h / 2));
+      back.lineStyle(2, 0xffffff, 0.35).strokeRoundedRect(-w, 0, w, h, Math.min(14, h / 2));
+      text.setPosition(-padX, padY);
+      hint = scene.add.container(b.right, b.bottom + 10, [back, text]).setDepth(btn.depth).setAlpha(0);
+      scene.tweens.add({ targets: hint, alpha: 1, duration: KL.paced(160), hold: 3200, yoyo: true, onComplete: () => hint.destroy() });
+    };
     return btn;
   };
 

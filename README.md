@@ -1,6 +1,6 @@
 # Kickoff Legends
 
-A cel-shaded 1v1 arcade football game for the browser. Pick a legend and beat the CPU in 90 seconds.
+A cel-shaded 1v1 arcade football game for the browser.
 
 | Home | Pick your legend |
 | :-: | :-: |
@@ -30,10 +30,9 @@ On phones and tablets, use the on-screen buttons.
 - 4 legends to pick from
 - 90-second matches, with sudden death if it's a draw
 - Driven shots, long balls, headers, sprint and a fireball Super Skill
-- A CPU rival that plays differently every match
+- An AI rival that plays differently every match
 - Day and night stadiums with a cheering crowd
 - Reactions to tease your rival
-- Full screen on phones and tablets, with no black bars
 - English and Hindi
 
 ## Stack & tech
