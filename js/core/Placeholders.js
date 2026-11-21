@@ -419,8 +419,9 @@ window.KL = window.KL || {};
         }
       }
     };
-    add('bg_sky', sky(false));
-    add('bg_sky_night', sky(true));
+    // a sky the living sky has split (sky.js) is drawn from its clear sky + clouds: no stand-in needed
+    if (!KL.SkyLife?.data(scene, 'bg_sky')) add('bg_sky', sky(false));
+    if (!KL.SkyLife?.data(scene, 'bg_sky_night')) add('bg_sky_night', sky(true));
     add('bg_stands', (ctx) => {
       ctx.fillStyle = '#3a3f7a';
       ctx.fillRect(0, 300, W, H - 300);

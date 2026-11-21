@@ -10,7 +10,7 @@
  *              → assets/images/pad/pad.js     window.KL_PAD_ART: cell size, button radius, the order
  *                                             of the cells, and where the face and keycap sit
  *
- *   npm run assets:pad        (a full npm run assets:build runs it too)
+ *   node tools/make-pad.mjs        (a full node tools/slice-sheet.mjs runs it too)
  *
  * On the way:
  *  - the keycaps come off: the game prints the player's own key in code (and none on a touch screen).

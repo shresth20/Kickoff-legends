@@ -10,7 +10,7 @@
  *                  → welcome_ball.webp + welcome_ball_light.webp + welcome.js: its football, cut out so
  *                    the welcome screen can spin it slowly (see makeLogoBall)
  *
- *   npm run assets:welcome        (a full npm run assets:build runs it too)
+ *   node tools/make-welcome.mjs        (a full node tools/slice-sheet.mjs runs it too)
  *
  * The raw folder is git-ignored like the rest of assets/source/; the outputs are committed. A missing
  * raw image is skipped: the welcome screen then falls back to the stadium and the atlas logo.

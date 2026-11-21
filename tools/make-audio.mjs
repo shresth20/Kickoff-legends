@@ -14,7 +14,7 @@
  * (loops) and music_menu / music_victory / music_defeat / music_tension (loops). Use .mp3 or .m4a:
  * Safari can't decode .ogg.
  *
- *   npm run audio:build
+ *   node tools/make-audio.mjs
  */
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'node:fs';
 import { resolve, dirname, relative, extname, join } from 'node:path';

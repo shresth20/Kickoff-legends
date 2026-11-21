@@ -10,8 +10,8 @@ A cel-shaded 1v1 arcade football game for the browser. Pick a legend and beat th
 
 ## Play
 
-Open `index.html` in a browser, or run `npm run serve` and go to <http://localhost:5173>.
-Works offline on desktop, phone and tablet (landscape).
+Open `index.html` in a browser, or serve the folder (for example `python3 -m http.server 5173`) and go to <http://localhost:5173>.
+Works 100% offline on desktop, phone and tablet (landscape): nothing to install, no network needed.
 
 | Action             | Key   |
 | ------------------ | ----- |
@@ -55,9 +55,23 @@ On phones and tablets, use the on-screen buttons.
 - Real ball spin, swerve and bounce, slowed a little for an arcade float
 - Squash and stretch, hit-stop and slow-motion goals
 - Steady animations: no sliding feet or shaking heads
-- Everything loads before "Tap to start", so nothing pops in
+- Everything loads before "Tap to start", so nothing pops in; served over the web, the art starts downloading the moment the engine arrives, and each image goes to the GPU once
 - Sharp on high-resolution screens
 - Pauses when you switch away
+
+## For developers
+
+The game itself needs nothing installed. The tools in `tools/` are plain Node and Python scripts:
+
+| Task | Command |
+| ---- | ------- |
+| Tests | `node --test tests/*.test.mjs` |
+| Rebuild `locales/locales.js` after editing `locales.json` | `node tools/make-locales.mjs` |
+| Rebuild all art from `assets/source/` (raw art, kept locally) | `node tools/slice-sheet.mjs` (`--preview` for contact sheets in `tools/.preview/`) |
+| Controller buttons / home-screen icons | `node tools/make-pad.mjs` · `node tools/make-icons.mjs` |
+| Check the character animations | `python3 tools/sprite-qa.py` |
+
+The art tools need `sharp` (`npm install --no-save --no-package-lock sharp@0.33.5`, which only creates the git-ignored `node_modules/`) and Python 3 with NumPy, SciPy and Pillow.
 
 ## Credits
 
