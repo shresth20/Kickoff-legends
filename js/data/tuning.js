@@ -223,7 +223,9 @@ KL.TUNING = (() => {
         reactionMs: 480,
         predictErrPx: 120,
         headerChance: 0.45,
-        superPolicy: 'late',
+        // when it fires a charged super (AIBrain.superAllowed). 'late' (only the last 30 s) left the CPU
+        // sitting on a full meter most of the match, so its super — and the hurt it deals — was rarely seen
+        superPolicy: 'chance',
         keeperBias: 140,
         moveSpeed: 0.78,
         kickPower: 0.85,

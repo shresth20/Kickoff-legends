@@ -76,9 +76,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.ensureAnims();
     this.play(`${def.id}/idle`);
 
-    // super aura: the fx_super_aura fire-ring art (8 frames, fx atlas), drawn behind the player
-    this.aura = scene.add.sprite(x, this.y - 90 * S, 'fx', 'fx_super_aura/00').setDepth(this.depth - 1).setVisible(false).setDisplaySize(220 * S, 240 * S);
-    this.auraScale = { x: this.aura.scaleX, y: this.aura.scaleY };
+    // (no separate super aura: every legend's super frames carry their own flames / lightning)
     this.sprintLines = scene.add.sprite(x, this.y - 80 * S, 'fx', 'fx_speedlines/00').setDepth(this.depth - 1).setVisible(false).setDisplaySize(200 * S, 100 * S).setAlpha(0.7);
 
     // pose layer (see the header): springs advance in step(), are drawn in applyPose()
@@ -99,15 +97,14 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
   }
 
   /** Draw-time only: squash/stretch about the feet (origin 0.5, 1) plus lean and recoil. Also places
-   * the aura and sprint lines here, where the body has already moved this frame (placed in step() they
-   * trailed the player by a frame). */
+   * the sprint lines here, where the body has already moved this frame (placed in step() they trailed
+   * the player by a frame). */
   applyPose() {
     if (!this.body) return;
     const q = this.pose.x;
     this.setScale(this.baseScaleX * (1 + q * KL.TUNING.motion.player.widen), this.baseScaleY * (1 - q));
     this.rotation = this.lean + this.tilt.x + this.whip.x;
     const S = KL.TUNING.player.scale;
-    if (this.aura.visible) this.aura.setPosition(this.x, this.y - 95 * S);
     if (this.sprintLines.visible) this.sprintLines.setPosition(this.x - this.sprintDir * 110 * S, this.y - 80 * S);
   }
   /** Back to the physics shape before the next update reads it. */
@@ -162,8 +159,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
   ensureAnims() {
     const anims = this.scene.anims;
     KL.ensureCharacterAnims(anims, this.def.id);
-    if (!anims.exists('fx_super_aura')) {
-      anims.create({ key: 'fx_super_aura', frames: anims.generateFrameNames('fx', { prefix: 'fx_super_aura/', start: 0, end: 7, zeroPad: 2 }), frameRate: 14 * KL.animPace(), repeat: -1 });
+    if (!anims.exists('fx_speedlines')) {
       anims.create({ key: 'fx_speedlines', frames: anims.generateFrameNames('fx', { prefix: 'fx_speedlines/', start: 0, end: 3, zeroPad: 2 }), frameRate: 18 * KL.animPace(), repeat: -1 });
     }
   }
@@ -183,6 +179,10 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.setPosition(x, gy);
     this.body.reset(x, gy);
     this.body.setVelocity(0, 0);
+    // stood on the turf: body.reset clears the contact flags until the next physics step, and without
+    // this the kickoff read as a fall — a jump frame, then the landing crouch, dust and thud for both
+    this.body.blocked.down = true;
+    this.wasOnFloor = true;
     this.facing = this.side === 'left' ? 1 : -1;
     this.setFlipX(this.facing === -1);
     this.actionUntil = 0;
@@ -193,7 +193,6 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.jumpUntil = 0;
     this.runUp = 0;
     this.locked = false; // released from a goal / full-time pose
-    this.hideAura(false);
     this.pose.reset();
     this.tilt.reset();
     this.whip.reset();
@@ -234,8 +233,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.locked) return;
     const ms = KL.TUNING.player.hurtDurationMs;
     this.hurtUntil = this.scene.time.now + ms;
-    this.superCharging = 0;
-    this.hideAura(true); // knocked out of the charge: the flames scatter
+    this.superCharging = 0; // knocked out of the charge (the hurt frames replace the super's flames)
     this.setState('hurt', ms);
     const K = KL.TUNING.player.hurtKnockback;
     this.body.setVelocityX(-this.facing * K.x);
@@ -246,26 +244,6 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
     this.tilt.v = 0;
     this.pose.x = Math.max(this.pose.x, PM.hurtSquash);
     this.bus.emit('HURT', { player: this.index });
-  }
-
-  /** Super aura on: the fire ring ignites with a quick pop, then loops its 8 frames. */
-  showAura() {
-    const a = this.aura, s = this.auraScale;
-    this.scene.tweens.killTweensOf(a);
-    a.setVisible(true).setAlpha(1).setScale(s.x * 0.55, s.y * 0.4).play('fx_super_aura', true);
-    this.scene.tweens.add({ targets: a, scaleX: s.x, scaleY: s.y, duration: KL.paced(160), ease: 'Back.out' });
-  }
-
-  /** Super aura off: burst = swell and fade out (release / knocked out of it); otherwise gone at once. */
-  hideAura(burst) {
-    const a = this.aura, s = this.auraScale;
-    this.scene.tweens.killTweensOf(a);
-    const reset = () => {
-      a.stop();
-      a.setVisible(false).setAlpha(1).setScale(s.x, s.y);
-    };
-    if (!burst || !a.visible) return reset();
-    this.scene.tweens.add({ targets: a, scaleX: s.x * 1.4, scaleY: s.y * 1.3, alpha: 0, duration: KL.paced(220), ease: 'Cubic.out', onComplete: reset });
   }
 
   celebrate() {
@@ -385,8 +363,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
 
     if (this.superReady && !hurting && !acting && i.super && this.superCharging === 0) {
       this.superCharging = KL.TUNING.super.chargeMs;
-      this.setState('super', KL.TUNING.super.chargeMs + 500);
-      this.showAura();
+      this.setState('super', KL.TUNING.super.chargeMs + 500); // its frames carry the flames
       this.bus.emit('SUPER_FIRED', { player: this.index });
     }
     if (this.superCharging > 0) {
@@ -395,7 +372,6 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
         this.superCharging = 0;
         this.superMeter = 0;
         this.bus.emit('SUPER_METER', { player: this.index, value: 0 });
-        this.hideAura(true); // the shot is released: the ring bursts outwards
         this.actionHitDone = false;
         this.actionUntil = now + 500;
         this.superReleaseUntil = now + 500;
@@ -448,7 +424,7 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
       if (Math.abs(ball.body.velocity.x) < P.bumpBelow && ball.body.velocity.y >= 0) ball.nudge(dir, P.bumpNudge);
     }
 
-    // (the aura and the sprint lines are placed in applyPose, once the body has moved)
+    // (the sprint lines are placed in applyPose, once the body has moved)
     const show = sprinting && this.onFloor && !acting;
     this.sprintDir = i.moveX || this.facing;
     this.sprintLines.setVisible(show).setFlipX(this.sprintDir === 1);
@@ -495,7 +471,6 @@ KL.Player = class Player extends Phaser.Physics.Arcade.Sprite {
 
   destroy(fromScene) {
     if (this.scene) this.unhookPose(this.scene);
-    this.aura?.destroy();
     this.sprintLines?.destroy();
     super.destroy(fromScene);
   }

@@ -4,11 +4,16 @@ window.KL = window.KL || {};
 KL.I18n = {
   locale: 'en',
   tables: window.LOCALES || { en: {} },
+  /** 'change' (locale) whenever set() switches language. See KL.onLocale. */
+  events: new Phaser.Events.EventEmitter(),
   get available() {
     return Object.keys(this.tables);
   },
   set(locale) {
-    this.locale = this.tables[locale] ? locale : 'en';
+    const next = this.tables[locale] ? locale : 'en';
+    if (next === this.locale) return;
+    this.locale = next;
+    this.events.emit('change', next);
   },
   t(key, vars) {
     const table = this.tables[this.locale] || {};
@@ -18,3 +23,15 @@ KL.I18n = {
   },
 };
 KL.t = (key, vars) => KL.I18n.t(key, vars);
+
+/**
+ * Run fn(locale) whenever the language changes, until the scene shuts down. Most screens don't need
+ * this: Settings restarts itself and the screen it returns to is built afresh. It is for the scenes
+ * that stay up underneath Settings (the match HUD) and must re-set their text in the new language.
+ */
+KL.onLocale = (scene, fn) => {
+  KL.I18n.events.on('change', fn);
+  const off = () => KL.I18n.events.off('change', fn);
+  scene.events.once(Phaser.Scenes.Events.SHUTDOWN, off);
+  scene.events.once(Phaser.Scenes.Events.DESTROY, off);
+};

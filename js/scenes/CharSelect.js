@@ -1,4 +1,4 @@
-/* Character select: split screen, Player 1 left / CPU right, 4 portrait cards each, big idle
+/* Character select: Player 1 left / CPU right, 4 portrait cards each, big idle
  * preview, Ready state per side, night-match toggle top-right. Match starts when both are ready.
  * Back, title and the night toggle form a top bar on the screen's safe edge; the two sides stay in
  * the design area, stacked up from the bottom safe edge, with thumb-sized cards on a phone. */
@@ -26,7 +26,6 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     KL.audio?.playMusic('menu'); // (carries on if it's already playing)
     V.cover(this, 0x0f1230, 0.6).setDepth(5);
     const title = KL.displayText(this, W.width / 2, 56, KL.t('select_title'), 56).setDepth(6);
-    const divider = this.add.rectangle(W.width / 2, 670, 6, 560, 0xf5c518).setOrigin(0.5, 1).setDepth(6);
 
     this.cardLooks = { idle: KL.Paint.card(this, 80, 80, 'idle', 14), selected: KL.Paint.card(this, 80, 80, 'selected', 14) };
     this.sides = [this.buildSide(0, 320), this.buildSide(1, W.width - 320)];
@@ -59,7 +58,6 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
       back.setPosition(v.left + 30 + 80 * u, barY).setBaseScale(u);
       nightUi.setPosition(v.right - 66 * u, barY).setScale(u);
       title.setY(barY);
-      divider.setSize(6, 670 - (v.top + 104 * u));
       this.sides.forEach((side) => this.placeSide(side, v));
     });
 
@@ -67,20 +65,18 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
   }
 
   /**
-   * Stack a side up from the bottom safe edge: cards, tagline, name, then the legend standing on the
-   * name. On a 1280×720 desktop view this is the original layout (cards 580, name 480, feet 462).
+   * Stack a side up from the bottom safe edge: cards, name, then the legend standing on the name.
+   * On a 1280×720 desktop view: cards 580, name 498, feet 480.
    */
   placeSide(side, V) {
     const cu = this.cu;
     const cardsY = Math.min(580 + 40 * (cu - 1), V.bottom - 12 - 47 * cu);
-    side.tagY = cardsY - 64 * cu;
-    side.nameY = side.tagY - 36 * cu;
+    side.nameY = cardsY - 82 * cu;
     const feet = side.nameY - 18;
     side.shadow.setY(feet - 14);
     side.preview.setY(feet);
     side.who.setY(feet - side.preview.displayHeight * (1 - KL.SELECT_HEAD_TOP) - 10);
     side.name.setY(side.nameY);
-    side.tag.setY(side.tagY);
     side.cards.forEach((card, k) => card.setPosition(side.cx + (k - 1.5) * 100 * cu, cardsY));
     this.placeFlag(side);
   }
@@ -104,7 +100,7 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
   buildSide(i, cx) {
     const isCpu = i === 1;
     const V = KL.View;
-    const side = { i, cx, index: 0, isCpu, nameY: 480, tagY: 516 };
+    const side = { i, cx, index: 0, isCpu, nameY: 498 };
     side.shadow = this.add.ellipse(cx, 448, 150, 26, 0x000000, 0.35).setDepth(6);
     side.preview = this.add.sprite(cx, 462, 'characters', 'char_01/idle/00').setOrigin(0.5, 1).setDisplaySize(330, 330).setDepth(6);
     if (isCpu) side.preview.setFlipX(true);
@@ -114,7 +110,6 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
     side.who = KL.displayText(this, cx, 0, KL.t(isCpu ? 'select_ai' : 'select_you'), 36 * side.nameK, '#ffffff', { originY: 1 }).setDepth(7);
     side.name = KL.displayText(this, cx, 480, '', 44 * side.nameK).setDepth(6);
     side.flag = this.add.image(cx, 480, 'ui', 'flag_eng').setDisplaySize(34, 34).setDepth(6).setVisible(false);
-    side.tag = KL.bodyText(this, cx, 516, '', V.font(18), '#c9cde0').setDepth(6);
     side.cards = KL.CHARACTER_IDS.map((id, k) => {
       const x = cx - 150 + k * 100;
       const card = this.add.container(x, 580).setDepth(6);
@@ -147,7 +142,6 @@ KL.CharSelectScene = class CharSelectScene extends Phaser.Scene {
       side.flag.setFrame(`flag_${def.flag}`).setVisible(true);
       this.placeFlag(side);
     }
-    side.tag.setText(KL.t(def.tagline));
     side.cards.forEach((c, k) => {
       const on = k === side.index;
       c.bg.setTexture((on ? this.cardLooks.selected : this.cardLooks.idle).key);

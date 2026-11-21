@@ -53,6 +53,8 @@ window.KL = window.KL || {};
       this.acc = 0;
       this.intent = { ...KL.EMPTY_INTENT };
       this.queue = []; // decisions waiting out the reaction delay
+      this.decision = null; // the one being acted on: { targetX | moveX, sprint, jump, super } (see update)
+      this.hopUntil = 0; // hopping over the ball to get goal-side of it (guardOwnGoal): held till it lands
       this.predictErr = 0;
       this.errTimer = 0;
       this.world = KL.BallPhysics.matchWorld(KL.TUNING);
@@ -81,6 +83,8 @@ window.KL = window.KL || {};
         this.wasFrozen = false;
         this.holdUntil = now + rand(...this.A.kickoffHoldMs);
         this.queue.length = 0;
+        this.decision = null;
+        this.hopUntil = 0;
         this.pendingKick = null;
         this.pendingJump = 0;
         this.plan = null;
@@ -100,12 +104,22 @@ window.KL = window.KL || {};
         if (this.queue.length > 12) this.queue.shift();
         this.strikeThink(now);
       }
-      let applied = false;
-      while (this.queue.length && this.queue[0].at <= now) {
-        this.intent = this.queue.shift().intent;
-        applied = true;
+      let fresh = null;
+      while (this.queue.length && this.queue[0].at <= now) fresh = this.queue.shift().intent;
+      if (fresh) this.decision = fresh;
+      // A decision is where to go (targetX) or which way to run (moveX, while dribbling). The spot is
+      // what's delayed by the reaction time; the run to it is steered from where the body is now, so it
+      // stops on its mark. (Steering by where it stood a reaction time ago ran it a stride or two past its
+      // mark — under a dropping ball and out the other side, leaving the ball behind it, between it and its
+      // own goal.) Jump and super fire once, the moment their decision comes due.
+      const d = this.decision;
+      this.intent = { ...KL.EMPTY_INTENT };
+      if (d) {
+        const diff = d.targetX == null ? 0 : d.targetX - this.me.x;
+        this.intent.moveX = d.targetX == null ? d.moveX : Math.abs(diff) < 14 ? 0 : Math.sign(diff);
+        this.intent.sprint = d.sprint;
+        if (fresh) (this.intent.jump = fresh.jump), (this.intent.super = fresh.super);
       }
-      if (!applied) this.intent = { ...this.intent, jump: false, kickLow: false, kickHigh: false, super: false };
       // A decided strike is swung once its reaction time is up, and only when the ball is actually at the
       // boot (or forehead) — like a player setting themselves; if it never comes within strikeWindowMs, the
       // CPU lets it go. (Swinging blind on a stale decision missed by a stride or more most of the time.)
@@ -120,7 +134,98 @@ window.KL = window.KL || {};
         this.pendingJump = 0;
         if (this.me.onFloor && !this.me.isActing) this.intent = { ...this.intent, jump: true };
       }
+      this.guardOwnGoal(now);
       return this.intent;
+    }
+
+    /**
+     * Never shove the ball into its own net. With the ball between the CPU and its own goal, running back
+     * at it only pushes it on goalwards (players face the rival's goal, so a body coming the wrong way is
+     * all it can give it) — faster than it can chase, and in. So each frame, near the ball, it plays the
+     * ball's flight forward against its own run: if the body would meet the ball from the pitch side, it
+     * hops over it if the jump clears it, runs under it if the ball is that high, keeps closing in while
+     * there's room (a hop may come clean in a stride or two), and otherwise stops and lets the ball be.
+     * A footballer does this on instinct, so it's done in real time, not on the reaction delay; the hop is
+     * flown out (run held homewards) so it lands past the ball.
+     */
+    guardOwnGoal(now) {
+      const me = this.me, home = me.side === 'left' ? -1 : 1;
+      if (now < this.hopUntil) {
+        this.intent.moveX = home;
+        this.intent.sprint = true;
+        return;
+      }
+      if (!me.onFloor || me.isActing || me.superCharging > 0 || this.pendingJump || this.intent.jump) return;
+      const ball = this.ball.body.center;
+      if (Math.abs(ball.x - me.x) > 320) return;
+      const path = this.ballPath(0.75);
+      const asIs = { move: this.intent.moveX, sprint: this.intent.sprint, jump: false };
+      const tAsIs = this.shoveTime(path, asIs, home).t;
+      if (tAsIs === Infinity) return;
+      const hop = { move: home, sprint: true, jump: true };
+      const h = this.shoveTime(path, hop, home);
+      if (h.t === Infinity && h.passed) {
+        this.intent.moveX = home;
+        this.intent.sprint = true;
+        this.intent.jump = true;
+        const P = KL.TUNING.player;
+        this.hopUntil = now + ((2 * Math.abs(P.jumpVelocity * me.stats.jump)) / KL.TUNING.world.gravity) * 1000;
+        return;
+      }
+      const under = { move: home, sprint: true, jump: false };
+      if (this.shoveTime(path, under, home).t === Infinity) {
+        this.intent.moveX = home;
+        this.intent.sprint = true;
+        return;
+      }
+      if (tAsIs > 0.12) return; // still room to close in
+      this.intent.moveX = 0;
+      this.intent.sprint = false;
+    }
+
+    /** The ball's next `secs`, one sample per 60th of a second (held still once it stops). */
+    ballPath(secs) {
+      const path = [];
+      const n = Math.round(secs * 60);
+      KL.BallPhysics.simulate(this.ballState(), KL.TUNING.ball, this.world, (s) => path.push({ x: s.x, y: s.y }) >= n, { maxT: secs + 0.05, spinR: this.ball.visR });
+      while (path.length < n) path.push(path[path.length - 1] || { x: this.ball.body.center.x, y: this.ball.body.center.y });
+      return path;
+    }
+
+    /**
+     * Played against the ball's path, when (s from now) would the CPU's body, doing `plan` ({ move: -1|0|1,
+     * sprint, jump }), first meet the ball while the ball is on its goal side — pushing it home? Infinity
+     * if never on the path. passed: a jump lands with the body past the ball (goal-side of it).
+     * The body moves by the same rules as KL.Player.step: run speed ramps at runAccel / runDecel (× airControl
+     * off the turf), the jump at jumpVelocity under the players' gravity.
+     */
+    shoveTime(path, plan, home) {
+      const T = KL.TUNING, P = T.player, me = this.me, pb = me.body, dt = 1 / 60;
+      const hw = pb.halfWidth, bh = pb.height, r = T.ball.radius + 3, g = T.world.gravity, floor = pb.bottom;
+      const target = plan.move * (plan.sprint ? P.sprintSpeed : P.runSpeed) * me.stats.speed;
+      let x = pb.center.x, vx = pb.velocity.x, feet = floor, vy = 0, air = !!plan.jump, passed = !plan.jump;
+      if (air) vy = P.jumpVelocity * me.stats.jump;
+      for (let i = 0; i < path.length; i++) {
+        const speedingUp = target !== 0 && Math.sign(target) === Math.sign(vx || target) && Math.abs(target) > Math.abs(vx);
+        const rate = (speedingUp ? P.runAccel : P.runDecel) * (air ? P.airControl : 1);
+        vx = KL.Motion.approach(vx, target, rate * dt);
+        x += vx * dt;
+        if (air) {
+          vy += g * dt;
+          feet += vy * dt;
+          if (feet >= floor) {
+            feet = floor;
+            air = false;
+            passed = (x - path[i].x) * home > 0;
+          }
+        }
+        // the first touch decides it (the ball's path is the body's to change from there): from the pitch
+        // side it's the CPU playing the ball, from the goal side it's a shove home
+        const b = path[i];
+        const nx = Math.max(x - hw, Math.min(b.x, x + hw)), ny = Math.max(feet - bh, Math.min(b.y, feet));
+        if (Math.hypot(b.x - nx, b.y - ny) < r) return { t: (b.x - x) * home > 2 ? (i + 1) * dt : Infinity, passed };
+      }
+      return { t: Infinity, passed };
     }
 
     /** Will the ball be on the boot (or the forehead, in the air) when a strike started now makes contact? */
@@ -220,7 +325,6 @@ window.KL = window.KL || {};
       // distances measured against the player's body follow its size (T.player.scale); pitch-wide ones don't
       const S = T.player.scale;
       const dx = ball.x - me.x;
-      const dy = me.y - 60 * S - ball.y;
       const vx = ball.body.velocity.x;
       const ballTowardMyGoal = Math.sign(vx) === -attackDir && Math.abs(vx) > A.towardGoalVx;
       const ballOnMySide = Math.sign(ball.x - T.world.width / 2) === -attackDir;
@@ -264,19 +368,16 @@ window.KL = window.KL || {};
         }
         targetX += this.jitter;
       }
+      // dribbling, it just runs on through the ball; otherwise the decision is the spot (update() steers to it)
+      if (!carrying) intent.targetX = targetX;
       const diff = targetX - me.x;
       intent.moveX = Math.abs(diff) < 14 ? 0 : diff > 0 ? 1 : -1;
       // (a sprint would run away from its own touches: dribbling is done at a jog). A ball running at its
       // goal with the CPU on the wrong side of it is a race: it sprints to get back past it
       const beaten = ballTowardMyGoal && (ball.x - me.x) * attackDir < 0;
       intent.sprint = !carrying && (beaten || Math.abs(diff) > this.level.sprintPx || (ballTowardMyGoal && Math.abs(diff) > this.level.sprintDefendPx));
+      // (a ball behind it — between it and its own goal — is got past by guardOwnGoal, in real time)
 
-      // the ball is behind us (between us and our goal): hop over it to get goal-side instead of shoving it in
-      const ballBehind = Math.sign(dx) === -attackDir && Math.abs(dx) > 20 * S;
-      if (ballBehind && Math.abs(dx) < 150 * S && dy < 70 * S && me.onFloor) {
-        intent.moveX = -attackDir;
-        intent.jump = true;
-      }
       // running into the rival's body and getting nowhere (they won't shift): hop over them
       const foe = this.foe, toFoe = Math.sign(foe.x - me.x);
       const pressing = me.onFloor && intent.moveX === toFoe && Math.abs(foe.x - me.x) < T.player.bodyWidth * S + 8 && Math.abs(me.body.velocity.x) < 40;
@@ -301,13 +402,16 @@ window.KL = window.KL || {};
       return this.contestsBall(this.foe);
     }
 
-    /** The super is charged and the policy says now's the time for it. */
+    /** The super is charged and the policy says now's the time for it (think() fires it at the first shot
+     * it gets: on the turf, at the ball, facing the rival's goal). 'immediate': whenever · 'trailing': only
+     * level or behind · 'late': only in the last 30 s · 'chance': level or behind, or in the last 30 s — it
+     * doesn't sit on a charged meter, but a CPU in front keeps it to close the match out. */
     superAllowed() {
       if (!this.me.superReady) return false;
       const [a, b] = this.getScore();
       const mine = this.me.index === 0 ? a : b, theirs = this.me.index === 0 ? b : a;
-      const pol = this.level.superPolicy;
-      return pol === 'immediate' || (pol === 'trailing' && mine <= theirs) || (pol === 'late' && this.getClock() < 30);
+      const pol = this.level.superPolicy, late = this.getClock() < 30;
+      return pol === 'immediate' || (pol === 'trailing' && mine <= theirs) || (pol === 'late' && late) || (pol === 'chance' && (mine <= theirs || late));
     }
 
     /**

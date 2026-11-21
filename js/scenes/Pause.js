@@ -42,6 +42,12 @@ KL.PauseScene = class PauseScene extends Phaser.Scene {
       ui.setPosition(V.cx, V.cy).setScale(k);
       fsBtn?.setPosition(V.right - 46 * V.ui, V.top + 46 * V.ui).setBaseScale(V.ui);
     });
-    this.events.on(Phaser.Scenes.Events.WAKE, () => KL.audio?.applySettings());
+    // Settings opens over this panel with it asleep; if the language was changed there, build the
+    // panel again in the new one (the next frame shows it, not the old words)
+    this.locale = KL.I18n.locale;
+    this.events.on(Phaser.Scenes.Events.WAKE, () => {
+      KL.audio?.applySettings();
+      if (KL.I18n.locale !== this.locale) this.scene.restart({ match: this.match });
+    });
   }
 };

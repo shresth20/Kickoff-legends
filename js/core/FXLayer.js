@@ -12,9 +12,9 @@
  * bursts look alike, and only transform / opacity animate.
  *
  * KL.FX owns one per match and routes the bus events here. The sprint lines keep their sprite logic in
- * Player (the sprite's visibility is the state) but are drawn here instead. The super aura is not a CSS
- * effect: Player draws it from the fx_super_aura art (fx atlas), behind the player; nor are the kick
- * starbursts and dust clouds, which KL.FX plays from the fx_impact / fx_dust art.
+ * Player (the sprite's visibility is the state) but are drawn here instead. The super's flames are part
+ * of the legends' super frames, not an effect. The kick starbursts and dust clouds aren't CSS effects
+ * either: KL.FX plays them from the fx_impact / fx_dust art.
  * ?cssfx=0 turns the layer off and brings the sprite effects back. */
 window.KL = window.KL || {};
 

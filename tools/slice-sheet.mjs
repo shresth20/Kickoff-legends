@@ -5,6 +5,7 @@
  *   node tools/slice-sheet.mjs            build everything in the manifest
  *   node tools/slice-sheet.mjs char_01_run  build one asset (debug)
  *   node tools/slice-sheet.mjs --preview  also write a contact sheet per strip to tools/.preview/
+ *   node tools/slice-sheet.mjs --no-steady  cut the character strips the plain way below (no Python)
  *
  * For each raw PNG: key the flat magenta (#FF00FF) background to alpha, detect
  * frame columns/rows by alpha projection, normalise every frame of a strip to one
@@ -13,10 +14,17 @@
  * atlases.js (window.KL_ATLASES, Phaser JSON-hash format; an array for multi-page
  * atlases) so the game loads them without XHR (file:// safe).
  *
+ * Character strips are cut, cleaned and steadied by tools/char-frames.py instead (Python 3 with
+ * numpy, scipy, Pillow; see its header): the magenta un-mixed out of the outlines (no pink rim on
+ * bright shirts), every loose piece kept with its own figure (no slivers of the neighbouring frame),
+ * and every frame placed by the body — planted foot, smooth head path — instead of by its box, so the
+ * animations don't jiggle. Without Python they fall back to the plain cut, with a warning.
+ *
  * Output images are WebP: lossy colour at q92 (indistinguishable from PNG on this cel-shaded art)
  * with lossless alpha, so cut-out edges stay exact. ~4× smaller than PNG.
  */
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
@@ -25,6 +33,7 @@ import { ASSETS, RAW_DIR, ATLAS_DIR, BG_DIR, ICON_DIR, PREVIEW_DIR, CHAR_STAND_P
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const PREVIEW = args.includes('--preview');
+const STEADY = !args.includes('--no-steady');
 const only = args.filter((a) => !a.startsWith('--'));
 const rawDir = resolve(root, RAW_DIR);
 const atlasDir = resolve(root, ATLAS_DIR);
@@ -33,6 +42,9 @@ const previewDir = resolve(root, PREVIEW_DIR);
 for (const d of [atlasDir, bgDir, ...(PREVIEW ? [previewDir] : [])]) mkdirSync(d, { recursive: true });
 
 const MAX_ATLAS = 4096;
+/** Sprite frames fill this much of their cell; the feet stand on the bottom edge of that area. */
+const FILL = 0.88;
+const feetLine = (cellH) => Math.round(cellH * (0.5 + FILL / 2));
 /** Encoder for every generated atlas page / background strip (see header). */
 const encode = (img) => img.webp({ quality: 92, alphaQuality: 100, smartSubsample: true, effort: 6 });
 const pad2 = (i) => String(i).padStart(2, '0');
@@ -408,7 +420,7 @@ async function emitStrip(img, regions, spec, outPrefix, names) {
     return;
   }
 
-  const fill = 0.88;
+  const fill = FILL;
   const tallest = Math.max(...boxes.map((b) => b.h));
   const widest = Math.max(...boxes.map((b) => b.w));
   let scale = Math.min((cellH * fill) / tallest, (cellW * fill) / widest);
@@ -423,7 +435,7 @@ async function emitStrip(img, regions, spec, outPrefix, names) {
   }
   // common baseline: the lowest pixel across the strip (feet on the floor frames)
   const baseline = Math.max(...boxes.map((b) => b.y + b.h));
-  const feetY = Math.round(cellH * (0.5 + fill / 2)); // bottom edge of the fill area
+  const feetY = feetLine(cellH); // bottom edge of the fill area
   const packed = []; // [slot on the sheet, atlas item] — spec.skip frames are measured above but not packed
   for (let i = 0; i < boxes.length; i++) {
     if (spec.skip?.includes(i)) continue;
@@ -449,6 +461,64 @@ async function emitStrip(img, regions, spec, outPrefix, names) {
       .composite([...(spec.pivot === 'center' ? [] : [{ input: floor, left: 0, top: 0 }]), ...comps])
       .png()
       .toFile(join(previewDir, `${spec.previewName ?? spec.name}.png`));
+  }
+}
+
+/**
+ * Cut, clean and steady every character strip in `specs` with tools/char-frames.py, all in one run
+ * (it works the sheets in parallel and caches them in tools/.char-frames/). Returns
+ * {sheets: {name: {dir, frames: [{file, w, h, offX, offY}], log}}, errors: {name: message}}; a sheet
+ * missing from `sheets` is cut the plain way (emitStrip). No Python / numpy / scipy: all of them are.
+ */
+function steadyCharacterFrames(specs) {
+  const none = { sheets: {}, errors: {} };
+  if (!STEADY || !specs.length) return none;
+  const jobs = [];
+  for (const s of specs) {
+    const idle = ASSETS.find((a) => a.name === `${s.charId}_idle`);
+    const file = rawFile(s.name), idleFile = idle && rawFile(idle.name);
+    if (!file || !idleFile) continue;
+    jobs.push({ name: s.name, file, state: s.out.slice(s.charId.length + 1), cols: s.cols, charId: s.charId, sizeRef: s.sizeRef ?? null, pivot: s.pivot ?? null, idle: { file: idleFile, cols: idle.cols } });
+  }
+  if (!jobs.length) return none;
+  const spec0 = specs[0];
+  const cellW = spec0.cellW ?? spec0.cell, cellH = spec0.cellH ?? spec0.cell;
+  const t0 = Date.now();
+  const python = process.env.PYTHON || 'python3';
+  const r = spawnSync(python, [resolve(root, 'tools/char-frames.py')], {
+    input: JSON.stringify({ cellW, cellH, feetY: feetLine(cellH), stand: CHAR_STAND_PX, jobs }),
+    maxBuffer: 64 << 20,
+  });
+  if (r.error || r.status !== 0) {
+    const why = r.error ? r.error.message : String(r.stderr).trim().split('\n').pop();
+    report.push(`WARN character strips cut without tools/char-frames.py (${why}) — needs ${python} with numpy, scipy and Pillow`);
+    return none;
+  }
+  const out = JSON.parse(String(r.stdout));
+  const fresh = Object.values(out.sheets).filter((s) => !s.cached).length;
+  console.log(`  steadied ${Object.keys(out.sheets).length} character strip(s) (${fresh} rebuilt, the rest cached) in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  return out;
+}
+
+/** Pack the frames tools/char-frames.py wrote for one character strip (already sized and placed in the cell). */
+async function emitCharFrames(spec, res) {
+  const cellW = spec.cellW ?? spec.cell, cellH = spec.cellH ?? spec.cell;
+  const atlas = atlases[spec.atlas];
+  const packed = [];
+  for (let i = 0; i < res.frames.length; i++) {
+    if (spec.skip?.includes(i)) continue;
+    const f = res.frames[i];
+    atlas.add({ name: `${spec.out}/${pad2(i)}`, buffer: readFileSync(join(res.dir, f.file)), w: f.w, h: f.h, cellW, cellH, offX: f.offX, offY: f.offY });
+    packed.push([i, atlas.items[atlas.items.length - 1]]);
+  }
+  if (PREVIEW) {
+    const n = res.frames.length, feetY = feetLine(cellH);
+    // feet line + each cell's centre line: the planted foot / the head should sit still on them
+    const lines = Buffer.from(`<svg width="${cellW * n}" height="${cellH}"><path d="M0 ${feetY}H${cellW * n}${Array.from({ length: n }, (_, i) => `M${(i + 0.5) * cellW} 0V${cellH}`).join('')}" stroke="#00ffff" stroke-opacity="0.6"/></svg>`);
+    await sharp({ create: { width: cellW * n, height: cellH, channels: 4, background: { r: 30, g: 34, b: 48, alpha: 1 } } })
+      .composite([{ input: lines, left: 0, top: 0 }, ...packed.map(([i, it]) => ({ input: it.buffer, left: i * cellW + it.offX, top: it.offY }))])
+      .png()
+      .toFile(join(previewDir, `${spec.name}.png`));
   }
 }
 
@@ -714,6 +784,12 @@ async function processAsset(spec) {
     report.push(`SKIP ${spec.name} (no raw file)`);
     return;
   }
+  if (steady.sheets[spec.name]) {
+    const res = steady.sheets[spec.name];
+    await emitCharFrames(spec, res);
+    report.push(`OK   ${spec.name} → ${spec.atlas}:${spec.out}/00..${pad2(spec.cols - 1)} (steady: ${res.log})`);
+    return;
+  }
   if (spec.kind === 'fans') {
     const cheerFile = rawFile(spec.cheer);
     if (!cheerFile) {
@@ -753,6 +829,7 @@ async function processAsset(spec) {
     await emitStrip(img, [content], spec, spec.out);
     report.push(`OK   ${spec.name} → ${spec.atlas}:${spec.out}`);
   } else if (spec.kind === 'strip') {
+    if (steady.errors[spec.name]) report.push(`WARN ${spec.name}: tools/char-frames.py failed, cut the plain way: ${steady.errors[spec.name].split('\n')[0]}`);
     const { bands: cols, method } = bands(img, content, spec.cols, 'x', spec.merge);
     await emitStrip(img, cols, spec, spec.out, spec.names);
     report.push(`OK   ${spec.name} → ${spec.atlas}:${spec.out}/00..${pad2(spec.cols - 1)} (${method})`);
@@ -778,6 +855,7 @@ async function processAsset(spec) {
 /* ---------------------------------------------------------------------- main */
 const todo = only.length ? ASSETS.filter((a) => only.includes(a.name)) : ASSETS;
 console.log(`slicing ${todo.length} asset(s) from ${rawDir}`);
+const steady = steadyCharacterFrames(todo.filter((a) => a.kind === 'strip' && a.atlas === 'characters' && a.charId));
 for (const spec of todo) {
   try {
     await processAsset(spec);
@@ -805,4 +883,6 @@ console.log(`wrote ${descFile} (${Object.keys(merged).join(', ')})`);
 if (todo.some((a) => /^bg_sky/.test(a.name))) await import('./sky-split.mjs');
 // the welcome screen's art is not atlas art (tools/make-welcome.mjs): a full build refreshes it too
 if (!only.length) await import('./make-welcome.mjs');
+// …and the controller's buttons (tools/make-pad.mjs)
+if (!only.length) await import('./make-pad.mjs');
 if (report.some((r) => r.startsWith('FAIL'))) process.exitCode = 1;

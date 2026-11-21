@@ -4,5 +4,7 @@ node_modules/
 # raw ChatGPT art is large; keep it local (commit the sliced atlases instead)
 assets/source/
 tools/.preview/
+tools/.char-frames/
+__pycache__/
 tools/.smoke/
 .playwright-mcp/

@@ -106,14 +106,15 @@ export const ASSETS = [
 
   // Buttons, panels, cards and key caps are NOT sliced from art any more: they are drawn in code at
   // screen resolution (js/ui/Paint.js; the controller's keys, js/ui/TouchControls.js). Their old raw
-  // sheets were dropped from assets/source/.
+  // sheets were dropped from assets/source/. The controller's round buttons are art again, but not
+  // atlas art: tools/make-pad.mjs cuts them from ui/ui_pad.png into assets/images/pad/.
   { name: 'ui_logo', kind: 'single', atlas: 'ui', keepAspect: true, out: 'ui_logo', maxSize: 1600 },
   // the match HUD's scoreboard plate (js/ui/HUD.js places the flags, names, scores and clock on it
   // from slots measured on this art: KL.HUD_SCOREBOARD.art). Kept near full size: it is shown
   // ~740 logical px wide, ~2200 device px on a 3× screen.
   { name: 'ui_hud_scoreboard', kind: 'single', atlas: 'ui', keepAspect: true, out: 'ui_hud_scoreboard', maxSize: 2040 },
-  // the Super button's charge ring (00) and its charged coin (02), one shared scale and centre so they
-  // swap in place (js/ui/TouchControls.js). The plain filled coin (01) is never shown.
+  // the Super button's old charge ring (00) and charged coin (02). Not shown since the controller was
+  // redrawn in code (js/ui/TouchControls.js paints its ring); drop this entry on the next full rebuild.
   // key 'glow': the charged coin's soft orange glow is blended with the magenta (keyGlow)
   { name: 'ui_super_ring', kind: 'strip', atlas: 'ui', cols: 3, cell: 640, pivot: 'center', out: 'ui_super_ring', skip: [1], key: 'glow' },
   // icons 01, 02 and 06 are never shown; only the four characters' flags are (KL.CHARACTERS[].flag)
@@ -126,13 +127,15 @@ export const ASSETS = [
   // sparkle — merge: 'nearest' keeps both whole (see bands() in slice-sheet.mjs)
   { name: 'fx_impact_dust', kind: 'rows', atlas: 'fx', cell: 192, pivot: 'center', rowSpec: [{ out: 'fx_impact', cols: 5, merge: 'nearest' }, { out: 'fx_dust', cols: 6 }] },
   { name: 'fx_misc', kind: 'rows', atlas: 'fx', cell: 128, pivot: 'center', rowSpec: [{ out: 'fx_speedlines', cols: 4, cellW: 256 }, { out: 'fx_confetti', cols: 8, cell: 48 }, { out: 'fx_whistle', cols: 3 }] },
-  { name: 'fx_super_aura', kind: 'strip', atlas: 'fx', cols: 8, cell: 320, cellH: 340, pivot: 'center', out: 'fx_super_aura' },
+  // (fx_super_aura, a fire ring drawn behind a player's super, is not cut any more: every legend's super
+  // frames carry their own flames, and the ring doubled them. Its raw sheet stays in assets/source/fx/.)
 ];
 
 export const RAW_DIR = 'assets/source'; // source PNGs (flat magenta background), git-ignored
 export const ATLAS_DIR = 'assets/images/atlases';
 export const BG_DIR = 'assets/images/backgrounds';
 export const WELCOME_DIR = 'assets/images/welcome';
+export const PAD_DIR = 'assets/images/pad'; // the controller's buttons (tools/make-pad.mjs)
 export const ICON_DIR = 'assets/images/icons';
 export const PREVIEW_DIR = 'tools/.preview'; // --preview contact sheets for review (git-ignored, never shipped)
 

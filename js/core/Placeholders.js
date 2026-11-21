@@ -536,7 +536,7 @@ window.KL = window.KL || {};
   /* -------------------------------------------------------------------- fx */
   function makeFxAtlas(scene) {
     if (scene.textures.exists('fx')) return;
-    const canvas = makeCanvas(2560, 1024);
+    const canvas = makeCanvas(2048, 528);
     const ctx = canvas.getContext('2d');
     const tex = scene.textures.addCanvas('fx', canvas);
     ctx.strokeStyle = INK;
@@ -618,27 +618,7 @@ window.KL = window.KL || {};
       ctx.restore();
       tex.add(`fx_whistle/${pad2(i)}`, 0, x, y, 128, 128);
     }
-    for (let i = 0; i < 8; i++) {
-      const x = i * 320, y = 640;
-      ctx.save();
-      ctx.translate(x + 160, y + 170);
-      ctx.fillStyle = '#ff9a1f';
-      ctx.beginPath();
-      for (let k = 0; k < 16; k++) {
-        const a = (k / 16) * Math.PI * 2;
-        const r = 120 + (k % 2 ? 30 : 0) + 14 * Math.sin(i * 0.8 + k);
-        ctx.lineTo(Math.cos(a) * r * 0.75, Math.sin(a) * r);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.beginPath();
-      ctx.ellipse(0, 0, 70, 110, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-      tex.add(`fx_super_aura/${pad2(i)}`, 0, x, y, 320, 340);
-    }
+    // (no super aura: the super poses draw their own flames, see pose() — as the studio art does)
   }
 
   /* ------------------------------------------------------------------- ui */

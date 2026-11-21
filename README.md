@@ -1,128 +1,64 @@
 # Kickoff Legends
 
-A cel-shaded 1v1 street-football game with the genre's arcade feel: heavy, snappy players under a floaty ball. Play against a relaxed CPU — it jogs rather than sprints (≈ 78 % of your pace), reacts a beat late, hesitates before it kicks and shoots a little softer (`KL.TUNING.ai.level`) — but never plays the same twice (`KL.TUNING.ai`): it waits a random beat at the whistle, picks a plan each time it wins the ball (dribble it up in little hops and shoot from a range of its choosing, shoot at once, or chip it long), times its headers off the ball's flight, and pops a reaction over its head after a goal. 90-second matches, driven shots, long balls, headers, sprint, and a charged Super Skill. Built with vendored Phaser 3, plain HTML/CSS/JS — no bundler, no CDN, runs 100 % offline (double-click `index.html`).
+A cel-shaded 1v1 arcade football game for the browser. Pick a legend and beat the CPU in 90 seconds.
+
+| Home | Pick your legend |
+| :-: | :-: |
+| ![Home screen](docs/screenshots/home.webp) | ![Pick your legend](docs/screenshots/pick-legend.webp) |
+| **Match** | **Goal!** |
+| ![Match in play](docs/screenshots/gameplay.webp) | ![Goal celebration](docs/screenshots/goal.webp) |
 
 ## Play
 
-Open `index.html` in a browser, or serve the folder (`npm run serve` → http://localhost:5173).
+Open `index.html` in a browser, or run `npm run serve` and go to <http://localhost:5173>.
+Works offline on desktop, phone and tablet (landscape).
 
-**Phones and tablets.** The game fills any landscape screen edge to edge — phone, tablet, laptop or ultrawide monitor — with no black bars, and the first tap ("Tap to start") switches it to full screen and locks landscape where the browser allows it (Android Chrome; iPad Safari goes full screen too). Held upright, a "rotate your device" screen covers the game and a running match pauses. iPhone Safari has no full-screen mode for web pages: there *Share → Add to Home Screen* installs the game as a full-screen app (`manifest.webmanifest`). The pause screen also carries a full-screen on/off button.
+| Action             | Key   |
+| ------------------ | ----- |
+| Move               | A / D |
+| Jump               | L     |
+| Straight kick      | J     |
+| Long kick / Header | K     |
+| Super skill        | I     |
+| Sprint (hold)      | Shift |
+| Pause              | Esc   |
 
-**Welcome screen.** While the game loads, a football rolls along the loading line from left to right, spinning as it goes and filling the line in gold behind it (`KL.BallLoader` in `js/scenes/Boot.js`; the ball is painted in code, `KL.Paint.football`). "Tap to start" takes the line's place only once everything the welcome screen shows is loaded and ready to draw, so nothing pops in afterwards. That tap (or a click, or any key) starts the sound (browsers keep audio off until the player touches the page) and opens the welcome screen with its music: the stadium, the logo with its football slowly spinning, a big **Play** button and **Settings** / **Credits** under it. Click or tap a button, or use the arrows / W A S D and Enter (up/down between Play and the row below, left/right along it).
+On phones and tablets, use the on-screen buttons.
 
-| Action               | Key      |
-| -------------------- | -------- |
-| Move                 | A / D    |
-| Jump                 | L        |
-| Straight kick        | J        |
-| Long kick / Header   | K        |
-| Super skill          | I        |
-| Sprint (hold)        | Shift    |
-| Pause                | Esc      |
+## Features
 
-Menus also take W/S or arrows + Enter, and the mouse.
+- 4 legends to pick from
+- 90-second matches, with sudden death if it's a draw
+- Driven shots, long balls, headers, sprint and a fireball Super Skill
+- A CPU rival that plays differently every match
+- Day and night stadiums with a cheering crowd
+- Reactions to tease your rival
+- Full screen on phones and tablets, with no black bars
+- English and Hindi
 
-**Picking a legend.** Play goes straight to character select. The CPU doesn't wait for you: as the screen opens it picks a legend at random and shows READY. Browse with A / D and confirm with J (or Enter); the match starts as soon as you lock in. The two legends always differ: if you lock in the CPU's legend, it switches to another. The *Night match* toggle (top-right, or N) switches the stadium to night straight away and keeps both picks.
+## Stack & tech
 
-**On-screen controller.** During a match the controls are drawn in the bottom corners of the screen: ← / → bottom-left and, bottom-right in key order (I · J · K · L), the fire Super button (wearing its charge ring; its flames flicker, harder once the Super is ready), Straight kick, Long kick and Jump. Sprint has no button: hold Shift. Each button prints your current key and lights up while it is held, so it doubles as a live key guide. On a phone or tablet the same buttons are touch targets — icons only, without the key names — sized for thumbs: hold a direction with one thumb and tap kick with the other; a finger can slide from one button to the next. The pause button (top-right) replaces Esc on touch screens, and in character select tapping the highlighted legend (or its preview) confirms it.
+### Built with
 
-**Reactions.** The chat button (left) opens a drawer with six reactions; the one you pick pops up over your player's head.
+- Phaser 3 + plain HTML, CSS and JavaScript (no build step)
+- WebAudio: all music and sound made in code
+- Node + sharp: sprite atlas pipeline
+- Python (NumPy, SciPy, Pillow): steadies the character animations
+- Playwright and `node:test` for testing
+- Art generated with ChatGPT
 
-**Stepping away.** Whenever you leave, the whole game pauses (`js/core/Activity.js`): you switch tab or app, lock the screen, put another window in front, or don't touch anything for 2 minutes (`KL.ACTIVITY.idleSec`). Music, crowd and every sound stop, nothing moves, a live match pauses itself, and a "Paused" card covers the screen. Any key, click or tap brings it all back, and a match then waits on its pause menu. `?autopause=0` keeps only the hidden-tab pause, which is handy with the dev tools open.
+### Made to feel smooth
 
-### Match rules at a glance
-
-- 90-second match; a draw goes to 30 s of sudden death (next goal wins).
-- Players always face the opponent's goal and backpedal; bodies block the ball, heads bounce it. Run onto a ball on the turf and each touch pops it ahead in a little hop: a dribble goes hop-hop-hop up the pitch.
-- Restarts come from the sky: through the countdown the ball waits behind the timer at the top of the screen and drops out at the whistle — straight onto the centre spot at kickoff; after a goal it drifts towards whoever conceded and comes down on their side of the centre.
-- Kicks fill the Super meter (conceding fills it faster). A Super shot is a fireball that knocks down anyone it hits.
-- Two kicks on the same touch clash and pop the ball straight up; a ball parked on a crossbar rolls off.
-
-### Kicking and the ball
-
-- **J — straight kick.** A driven shot that skims the turf (about 15°, dipping on its topspin): centre circle to goal in about 0.8 s, and from your own box it still rolls into the far goal. Use it to shoot.
-- **K — long kick.** A lofted ball (about 39°) that climbs ~210 px, over a standing rival and about bar height, and carries ~950 px before it lands (~1.7 s in the air), held up by backspin; it checks when it lands. Use it to clear, to switch play, or to beat the keeper from your own half. In the air, K is a header, aimed by where the ball meets the head (meet it under its middle to nod it down).
-- **Snappy strikes.** The boot meets the ball about 4 frames (~67 ms) after the key, and the whole body swings through it: rocked back on the wind-up, whipped forward at the contact (a header nods into the ball). Run onto the ball to hit it harder: your run-up goes into the strike, and you carry on through it at a stride's pace instead of stopping dead. A kick or jump pressed a moment early (still finishing a kick) is buffered, and once the follow-through is done you can run, jump or kick again straight away.
-- **Real ball physics** (`js/systems/BallPhysics.js`, numbers in `KL.TUNING.ball`): quadratic air drag, the Magnus swerve of the ball's spin, rolling resistance on the turf and the skid of each bounce (spin traded for pace). The CPU reads the ball with the same model, and before it strikes it plays both kicks forward to pick the one that would beat the goal.
-- **Arcade float.** The players fall under strong gravity (a jump is ~140 px, up and down in ~0.6 s) while the ball hangs: every flight keeps the shape of a real strike but plays out 1.45× slower (`BALL_TIME` in `js/data/tuning.js`: ball speeds ÷ it, ball accelerations ÷ its square), so there's time to read it, get under it and head or volley it. `BALL_TIME = 1` gives back the real-football pace exactly. Where a body meets the ball, the ball feels the body's run in its own time and only part of a jump, so nobody heads it out of the stadium.
-
-## Folder structure
-
-```text
-index.html      entry point, root only (+ manifest.webmanifest: the installable full-screen web app)
-assets/         everything the game loads, by type, plus the raw art it is built from:
-  images/         atlases/ (sprite atlases + atlases.js) · backgrounds/ (stadium layers, living sky + sky.js)
-                  · welcome/ (welcome screen + welcome.js) · icons/ (favicon, home-screen icons)
-  fonts/          WOFF2, only the faces the game uses
-  audio/          generated audio.js (studio sounds, if any, from an optional sound/ folder)
-  source/         raw ChatGPT PNGs by subject: characters/ stadium/ props/ ui/ fx/ welcome/
-                  (git-ignored, never loaded by the game: the art pipeline's input)
-css/            stylesheets (page chrome, CSS effects)
-js/             all scripts: vendor/ (Phaser), data/, core/, audio/, entities/, systems/, ui/, scenes/, main.js
-locales/        locales.json (source of truth) + generated locales.js
-tools/          node-only build/dev scripts (asset pipeline, locale build, headless smoke test)
-tests/          unit tests for the pure game logic
-```
-
-## Art pipeline
-
-The game ships with procedural placeholder art and swaps in the studio art automatically when the sliced atlases exist.
-
-1. Generate the images in ChatGPT with the prompt pack from the production plan (81 images, flat `#FF00FF` background). Each download is named after its asset (`char_01_idle.png`, `bg_sky.png`, …).
-2. `npm install` (once — only `sharp` is needed, for the tools).
-3. Put the PNGs in `assets/source/` — filed by subject (`characters/`, `stadium/`, `props/`, `ui/`, `fx/`, `welcome/`), or loose at its top, where a fresh copy wins over the filed one; a new batch can also sit in a sub-folder of its own, and a browser's `name (1).png` copy counts (`rawFile` in `tools/manifest.mjs` finds them all) — or run `npm run assets:import`, which copies them from `~/Downloads` and lists anything missing.
-4. `npm run assets:build` keys out the magenta, detects frames by alpha gaps (or the emptiest column when sprites touch), drops slivers of neighbouring frames, scales each character to one consistent size across all of its sheets on a shared feet baseline, packs `characters` / `props` / `ui` / `fx` / `crowd` atlases into `assets/images/atlases/` (split into ≤4096 px pages when needed — `characters.webp`, `characters-1.webp`), and writes the stadium layers as trimmed strips to `assets/images/backgrounds/` (`js/ui/Stadium.js` stacks them). Output is WebP (q92 colour, lossless alpha). It also writes the browser-tab icon (`assets/images/icons/favicon.png`) from the first ball frame. Add `--preview` to get a contact sheet per strip in `tools/.preview/` (git-ignored) for review.
-   It then cuts each sky into a clear sky + its clouds (`tools/sky-split.mjs`, also `npm run assets:sky`): `bg_sky*_clear.webp`, `sky_clouds_day|night.webp` and `sky.js` (cloud frames, star spots, moon box) for the living sky.
-   The crowd comes from three line-ups of nine fans (`bg_crowd_anime_a/b/c`), each also drawn arms-up (`…_cheer`): every fan is cut out on its own (`kind: 'fans'`) as a calm and a cheer frame on one feet line, so the game can make any of them cheer. The fence (`bg_fence_only` → `bg_fence`) is cut post-middle to post-middle so it tiles seamlessly, and keyed with `key: 'unmix'` so its thin wires lose the magenta cast.
-5. Reload the game. `KL.artSource` reads `'studio'` once all five atlases are present.
-6. `npm run assets:icons` makes the home-screen / install icons (`assets/images/icons/`) from the logo in the `ui` atlas.
-7. The welcome screen's art is `assets/source/welcome/welcome-bg.png` (the stadium backdrop) and `assets/source/ui/ui_logo.png` (the logo on magenta, the same file the `ui` atlas's logo is cut from). `npm run assets:welcome` (also part of a full `assets:build`) writes them to `assets/images/welcome/`: `welcome_bg.webp` (the backdrop as painted) and `welcome_logo.webp` (the logo exactly as drawn, only its magenta keyed out, its navy edge keyed exactly so no purple fringe is left). The logo's football is also cut out in two layers so the welcome screen can spin it: `welcome_ball.webp` (its panels with the drawn lighting divided out, as a round disc in a navy ring) and `welcome_ball_light.webp` (that lighting, multiplied on top and kept still); `welcome.js` says where the ball sits on the logo. The ball's circle is measured on the raw art (`LOGO_BALL` in `tools/make-welcome.mjs`). Without these files the welcome screen falls back to the stadium and the atlas logo.
-
-Frame counts, cell sizes and atlas names live in `tools/manifest.mjs`; animation timing in `js/data/characters.js`; physics/AI tuning in `js/data/tuning.js`.
-
-## Rendering & UI
-
-- **Fits any screen.** Gameplay is designed in a fixed 1280×720 area (the pitch, goals, physics and AI never change), and the view around it grows to the screen's shape instead of letterboxing (`KL.View`, `js/core/Viewport.js`): wider than 16:9 (phones, ultrawide) shows more stadium at the sides with the design area centred; narrower (iPads, 16:10) shows more sky above, the design area standing on the bottom edge. The stadium runs `KL.STADIUM_MARGIN` past each side and its sky reaches up to `KL.STADIUM_LAYOUT.sky.capTo`, so no edge ever shows; only shapes beyond `KL.View.LIMITS` (4:3 … 2.4:1, e.g. a portrait desktop window) letterbox. Every scene camera is scrolled to the view's top-left, so game code keeps its 1280×720 coordinates. The canvas follows window resizes, rotations and full screen live.
-- **Screen-anchored UI, sized per device.** Like a native game's, the HUD and menu chrome keep to the screen's edges inside the safe area (notch, rounded corners, home indicator; `viewport-fit=cover`): `KL.View.left/right/top/bottom` are those edges in design coords, and scenes place corner buttons, the scoreboard and the touch pad in `KL.View.layout(scene, fn)` callbacks, which re-run whenever the view changes. Content (logo, menu buttons, character select, panels) stays in the design area, centred in the safe area. Touch phones get a UI scale (`KL.View.ui`, ≈1.25–1.4; 1 on tablets and desktops) so buttons are thumb-sized (a kick button ≈50 CSS px tall, a move button ≈66 across) and small print grows with `KL.View.font(px)`; UI textures and text are rasterised at `KL.UIRES` (`KL.RES` × that scale) so the scaled-up UI stays sharp. Panels (pause, settings, result card) scale as one group and never past what fits. Test any of it on a desktop with `?touch=1` (touch UI) and `?safe=top,right,bottom,left` (fake safe-area insets in CSS px).
-- **Sharp on any screen.** Game code works in logical px, but the canvas is created at the display's real pixel density (`KL.RES`, up to 3×; 2× from `file://` and on phones / tablets) and every scene camera is zoomed to match (`js/core/HiDPI.js`). Text is rasterised at the same density. Force a value with `?res=1.5` when testing. A GPU that can't fill that many pixels at the screen's refresh rate (a budget phone or tablet, a laptop driving a 4K monitor) would drop frames, so `KL.RenderScale` watches the frame rate and, while it stays under ~48 fps, renders the canvas at a lower resolution (`KL.RENDER`, quarter steps down to 1×) — keeping each step only if it actually speeds things up, so a device capped at 30 fps (low-power mode) is left alone. Textures stay at `KL.RES`; nothing moves or resizes on screen. `?autores=0` turns it off. Opened from `file://` the game draws with the Canvas renderer; there every image is decoded once while booting (`KL.predecodeTextures` in `js/scenes/Boot.js`) and the far stadium layers drift by moving rather than re-tiling, so no frame waits on a decode or a repaint.
-- **Welcome screen** (`js/scenes/Menu.js`). Laid out in `KL.WELCOME` (design px): on a 16:9 screen the backdrop shows exactly as painted; on other shapes it covers the whole view with its horizon held in place where it can, and on a tall tablet the logo rises into the extra sky. The logo's football turns once every 14 s (`ballTurnMs`): its panels spin under the art's own light, which stays put. Its buttons are painted while the loading screen is up (`KL.MenuScene.warm`), and on the Canvas renderer "Tap to start" also waits for every image to be decoded. Its pill buttons (Play in orange-gold with a painted play glyph, Settings and Credits in blue with the `ui_icons` gear and trophy) are painted by `KL.Paint.pill`: white rim, ink outline, glossy face, lip; focus brightens them with a glow. Play breathes gently; it and the football keep still with the OS "reduce motion" setting.
-- **UI drawn in code.** Buttons, panels and cards are painted by `js/ui/Paint.js` with CSS-style primitives (rounded rects, gradients, inset borders, gloss, drop shadows) at device resolution, then cached as textures. Restyle them there. Illustrated art (logo, icons, flags, portraits, GOAL/WIN banners, the HUD scoreboard plate and the Super button's charge ring / charged coin) comes from the `ui` atlas; the slots the HUD fills on the scoreboard art are measured in `KL.HUD_SCOREBOARD.art` (`js/ui/HUD.js`), the ring's proportions in `KL.PAD_LAYOUT.ring` (`js/ui/TouchControls.js`). Without those frames (placeholder art) the plate and ring are painted in code instead.
-- **On-screen controller.** `js/ui/TouchControls.js` paints the buttons (same "CSS in canvas" approach) and tracks every pointer: whatever button a finger or the mouse is on goes into that player's `KL.VirtualPad` (`js/systems/InputSystem.js`), which `KeyboardInput` merges with the keys. Presses are counted when the finger lands, so a tap shorter than a frame still fires once. Positions and sizes live in `KL.PAD_LAYOUT.solo`: each button is anchored to the left or right safe edge (`dx`) and up from the bottom one (`dy`), scaled by the UI scale (capped so both hands fit side by side, `KL.PAD_LAYOUT.span`). Reactions (drawer + head badge) are in `js/ui/Emotes.js`.
-- **Fonts per locale.** Latin locales use Bangers for headlines and Oswald for body text; Hindi uses Teko for both (it has Devanagari). `KL.FONT_SETS` in `js/ui/Widgets.js` picks the set from the current language, including a size boost for Teko. Key names on the controller are always Oswald.
-- **Living sky.** `js/ui/SkyLife.js` puts the painted clouds back as sprites that drift on a slow wind (bigger = nearer = a little faster) and gently swell; small gull flocks cross the day sky now and then, flapping in bursts; at night the stars twinkle and a rare shooting star streaks past the moon. Every position is a pure function of one shared clock, so the sky carries on seamlessly between menu screens and freezes while a match is paused. Speeds and frequencies live in `KL.SKY_LIFE`. The OS "reduce motion" setting keeps the sky still.
-- **Stadium depth.** Back to front: the stands, a terrace with two rows of fans (`KL.STADIUM_LAYOUT.crowd`), one fence (`fence`), then the pitch. The back row is smaller, higher and mixed with more sky haze than the front row, so the fans read as being across the pitch; the terrace's front step hides the back row's feet and the pitch's barrier the front row's. Every fan is its own sprite, prescaled once per row at device resolution.
-- **Living crowd — a divided stand.** Every fan supports one of the two players: they stand mixed all along both rows in little groups of 1–3, half and half (`KL.Stadium.lineup`, tested in `tests/crowd.test.mjs`), and about one in ten waves a flag in their player's kit. When a player scores, only their fans celebrate — jump with arms up, keep them up, drop them, on a beat of their own (`KL.CROWD`) — with their flags waving and cameras flashing on their side; the other half stays put. The winner's fans cheer again at full time. A strike near the goal a player attacks, or a super, gets a quick "ooh!" from that player's fans; the odd flash pops in the stands the rest of the time.
-- **Goals.** The perspective goals (`goal-net-left/right.png`, `kind: 'goal'` in the manifest) are two layers that sandwich the players and the ball: the far frame and roof behind them, the near side panel in front, so a ball in the goal sits behind the near netting. The near net ripples on a goal and twitches when the ball clatters the frame (frames generated by the slicer, which moves only the net, never the posts). The mouth, crossbar and ground at mid-depth are measured on the art and line up with the goal's physics. Each goalmouth is worn to brown earth (with islands of grass) out past the mouth, with grass tufts where the posts meet the ground — drawn in code from the measured post bases.
-- **Layout & scale (matched to the reference).** The field (`new-pitch.png` → `bg_pitch`) is shown at the view width on the bottom edge (`fit: 'width'`), covering the bottom half of the screen; its penalty-box corners meet the goals' near posts, and the players stand between its touchlines (`groundY` 490). The touch pad sits on the grass in front of them. A player is about 124 px tall (`KL.TUNING.player.scale` 0.73; body, reach, the CPU's sense of distance and emote badges follow it), the goal opening 255 px (the whole goal ≈ 44 % of the screen), the ball 46 px across. Menu / result screens stand their big characters at `KL.STADIUM_LAYOUT.showcaseY`.
-- **Special effects (CSS).** The match effects are built in CSS on a DOM layer laid over the canvas (`js/core/FXLayer.js` + `css/fx.css`): speed lines streaming off a sprinter; the referee's whistle trilling with sound waves (gold at kickoff, red for sudden death, pink at full time); twinkles when a super is ready; and goal confetti in the scorer's kit colours, fired from two corner cannons and falling with a leaf-like swing and flip. The layer works in the same 1280×720 logical px, follows the camera's scroll, shake and fades, runs at the game's speed (goal slow-mo, hit-stop dip) and the look-only pace, and hides while paused. Randomness comes in through CSS custom properties, so no two bursts look alike; only `transform` and `opacity` animate. `KL.FX` routes the bus events to it; `?cssfx=0` brings back the sprite effects from the `fx` atlas. The super aura is not CSS: it is the hand-drawn fire ring (`fx_super_aura`, 8 frames in the `fx` atlas) drawn behind the player, popping in when the charge starts and swelling out as the shot is released (`showAura` / `hideAura` in `js/entities/Player.js`). Kicks and dust are hand-drawn art too, played by `KL.FX` (`js/core/FX.js`): the `fx_impact` starburst (sparkle → star → burst → flying shards) on every kick, sized by the strike (header smallest, super biggest) and turned / mirrored at random, and the `fx_dust` cloud on landings, low strikes along the turf and — small, drifting back behind the boots — every sprint stride. (The impact row is sliced with `merge: 'nearest'` in `tools/manifest.mjs`, so its tiny first sparkle and its ring of loose shards each stay one whole frame.) The OS "reduce motion" setting spawns fewer pieces and stops the confetti flutter.
-- **Shadows.** Players and the ball cast soft ground shadows (`js/entities/Shadow.js`, `KL.SHADOW`) that shrink and fade as they rise — firmer by day, softer under the floodlights.
-- **Floodlights.** At night every lamp on the stands glows, with a faint lens flare and a soft cone of light falling over the crowd towards the pitch (`KL.FLOODLIGHT`; lamp spots measured on `bg_stands` in `KL.STADIUM_LAYOUT.floodlights`).
-- **Motion.** Physics steps at the display's refresh rate (60 / 120 / 144 Hz…, measured by `KL.Motion` in `js/core/Motion.js`), so high-refresh screens get a new position every frame instead of judder — and exactly one step per frame: the step's phase is held half a frame from the next refresh (`lockStepPhase`), so timing noise never makes a frame repeat a position and the next one jump two. Slow motion takes shorter steps, still one per frame, so the goal slow-mo is as fluid as full speed. The ball (`js/entities/Ball.js`) is drawn by a rig on top of its invisible physics body: it spins for real (rolls at its ground speed; a long kick carries backspin, a straight kick topspin), squashes along every impact — boot, turf, post, head — and springs back round through a slight stretch like an air-filled ball (seen pressed against the boot during a kick's hit-stop), and leaves faint after-images on hard shots; the fireball flies nose-first. Players accelerate and brake instead of snapping to full speed, their run cycle follows their real speed, and a draw-time pose layer adds a stretch on take-off, a landing squash sized by the fall, a lean into starts and stops and a recoil tilt when hit (the hitbox never changes). A goal's slow-mo eases back to full speed, and a strike's hit-stop is a short dip in game speed (`KL.TUNING.juice`: it costs the same game time as a freeze, but the picture never stops). `KL.TUNING.motion.animPace` (0.85) plays everything look-only a little slower and calmer — sprite cycles, a kick's follow-through, effects, crowd beats, UI transitions — while every timing gameplay reads (a kick's wind-up and contact frames, headers, the super charge, action lengths, physics) stays exact. All of it is tuned in `KL.TUNING.motion`; the OS "reduce motion" setting halves the squash and drops the after-images.
-
-## Sound & music
-
-Everything you hear is synthesised in code with WebAudio (`js/audio/`), so the game still needs no audio files, runs offline and works from `file://`. The crowd is the only thing rendered ahead: about a second after the first tap, an OfflineAudioContext bakes each of its textures voice by voice in the background, then they are looped.
-
-- **Mixer** (`Engine.js`). Five buses (music, sound effects, UI, crowd, ambience) feed a "muffle" low-pass, a limiter and the master volume. A generated stadium reverb is open-air by day and longer under the floodlights; the crowd, whistle, horns and kicks all send to it. Every match sound is panned to where it happens on the pitch. Pausing muffles the match and turns it down, while menu clicks stay crisp. A goal's slow-mo closes the sound in for a beat, then opens it up into the roar.
-- **The ball and the bodies** (`Sfx.js`). A kick layers the boot's thump, the leather's slap and the "pock" of the ball's air, scaled by how hard it was struck. The long kick adds a deep boom, the super an explosion with a fire whoosh and crackles. Bounces, chests and the back of the net are each heard as hard as they were hit (`BALL_IMPACT` from `Ball.syncRig`). The crossbar rings with a metal tube's partials (`FRAME_HIT`). The ball whooshes through the air by its speed, and the fireball roars. Boots patter on the grass in step with the run cycle, and a charged-up player's flames crackle.
-- **The referee and the stadium**. A pea whistle (a ~3 kHz tone warbled by the pea) blows one blast at kickoff, a short one for a goal, short-short-long for sudden death and full time. A goal brings the stadium horn and the fans' air horns. The last ten seconds tick, and the last three beep.
-- **The crowd** (`Crowd.js`). No constant chatter: the stand is heard when it reacts. A shot at goal makes it draw breath; then a goal erupts (roar, air horns, applause), a near miss gets an "ooh", a blocked chance an "aww", the woodwork an "ooh", and a fireball knockdown boos and whistles. Its mood follows the game (the ball near a goal, the clock running down, sudden death), and in the calm spells of a match the fans drum and clap a chant ending in "HEY!".
-- **Ambience** (`Ambience.js`). By day: a gusting wind, the city's hum, songbirds, and gulls that call only while the sky's flock is overhead, from where the flock is (read off `KL.SkyLife`). At night: the floodlights' hum, crickets, a far-off owl, and a faint shimmer under each shooting star.
-- **Music** (`Music.js`). An original stadium anthem in D major at 124 bpm, played by a step sequencer on synthesised drums, bass, pad, plucks, brass and a lead, with the crowd shouting "HEY!" in the chorus. The theme plays on the menus and character select; the result screen gets a fanfare then a victory take, or a gentle fall then a slow take in B minor. The match itself has no score: like a broadcast, the crowd is its soundtrack, until a heartbeat tension track takes over for the last ten seconds and sudden death. Goals get a brass stinger. Songs are data (`KL.SONGS`).
-- **Match logic** (`Director.js`). `KL.AudioDirector` reads the match's EventBus and live state and drives all of the above; `MatchScene.wireAudio` creates one per match.
-- **Settings**: Music, Sound effects and Crowd & ambience volumes. Each slider plays a taste of what it controls.
-
-**Studio sounds.** To replace any synthesised sound with a recording, put the file in `assets/sound/` named after it and run `npm run audio:build`. Use a folder of several takes for random variation (`assets/sound/kick_low/*.mp3`). This writes `assets/audio/audio.js`, a plain script, so it still works from `file://`. Names include every recipe in `Sfx.js` (`kick_low`, `crossbar`, `whistle_kickoff`, `goal_horn` …), `crowd_applause` (a seamless loop), `crowd_roar`, `crowd_ooh`, `crowd_aww`, `crowd_hey`, `crowd_boo`, `crowd_clap`, `amb_day` / `amb_night`, `music_menu` / `music_victory` / `music_defeat` / `music_tension`. Use `.mp3` or `.m4a`: Safari can't decode `.ogg`.
-
-## Localisation
-
-`locales/locales.json` is the source of truth (`en` first). After editing it run `npm run locales:build` to regenerate `locales/locales.js`, which the game loads as a plain script so it works from `file://`. The build warns about keys missing from any language.
-
-## Tests
-
-- `npm test` — unit tests for the match-rules state machine (clock, goals, sudden death, winner), the ball physics and kicks (`tests/ball-physics.test.mjs`: how fast, high and far J and K go, spin, bounce, roll, frame-rate independence), the motion helpers, the sky, the crowd, the responsive view (`tests/viewport.test.mjs`: view shapes, safe areas, letterboxing, UI scale) and the audio's pure parts (`tests/audio.test.mjs`: song data and the sequencer, match pressure, the applause synth) and the stepping-away pause (`tests/activity.test.mjs`).
-- `node tools/smoke.mjs` — headless Chromium walkthrough of every screen with screenshots in `tools/.smoke/` (needs Playwright; set `PLAYWRIGHT_PATH` if it is installed globally).
+- Physics runs at your screen's refresh rate (60, 120 or 144 Hz)
+- Lowers render resolution on its own if a device can't keep up
+- Snappy kicks (~67 ms) and buffered inputs, so no press is lost
+- Real ball spin, swerve and bounce, slowed a little for an arcade float
+- Squash and stretch, hit-stop and slow-motion goals
+- Steady animations: no sliding feet or shaking heads
+- Everything loads before "Tap to start", so nothing pops in
+- Sharp on high-resolution screens
+- Pauses when you switch away
 
 ## Credits
 
-Design, art direction and code: Shresth Kasera ([LinkedIn](https://www.linkedin.com/in/shresth-kasera/)). Character and UI art generated with ChatGPT in a cel-shaded anime style. Sound and music: synthesised in code (WebAudio). Engine: Phaser 3 (MIT). Fonts: Bangers, Oswald and Teko (SIL Open Font License), bundled in `assets/fonts/`.
+Made by Shresth Kasera ([LinkedIn](https://www.linkedin.com/in/shresth-kasera/), [GitHub](https://github.com/shresth20/)). Engine: Phaser 3 (MIT). Fonts: Bangers, Oswald and Teko (SIL Open Font License).

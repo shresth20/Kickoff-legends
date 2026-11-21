@@ -313,53 +313,65 @@ window.KL = window.KL || {};
     return { pentagons, seams };
   })();
 
+  /** The ball's white body with its ink pentagons and seams, r px in radius, centred on (cx, cy). */
+  function ballPanels(ctx, cx, cy, r) {
+    // a point on the sphere → canvas; a point round the back is pushed out to the rim
+    const at = ([x, y, z]) => {
+      const k = z < 0 ? 1 / Math.max(1e-6, Math.hypot(x, y)) : 1;
+      return [cx + x * k * r, cy - y * k * r];
+    };
+    circle(ctx, cx, cy, r);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.save();
+    circle(ctx, cx, cy, r);
+    ctx.clip();
+    ctx.strokeStyle = ctx.fillStyle = C.ink;
+    ctx.lineJoin = ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(1, r * 0.07);
+    for (const [a, b] of FOOTBALL.seams) {
+      if (a[2] + b[2] <= 0) continue;
+      ctx.beginPath();
+      ctx.moveTo(...at(a));
+      ctx.lineTo(...at(b));
+      ctx.stroke();
+    }
+    for (const p of FOOTBALL.pentagons) {
+      if (p.centre[2] < -0.25) continue;
+      ctx.beginPath();
+      p.corners.forEach((q, k) => (k ? ctx.lineTo(...at(q)) : ctx.moveTo(...at(q))));
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /** The ball's highlight and round shading over its panels (no outline). */
+  function ballLight(ctx, cx, cy, r) {
+    const g = ctx.createRadialGradient(cx - r * 0.38, cy - r * 0.42, r * 0.05, cx, cy, r * 1.02);
+    g.addColorStop(0, 'rgba(255,255,255,0.75)');
+    g.addColorStop(0.32, 'rgba(255,255,255,0)');
+    g.addColorStop(0.7, 'rgba(20,24,70,0)');
+    g.addColorStop(1, 'rgba(20,24,70,0.5)');
+    circle(ctx, cx, cy, r);
+    ctx.fillStyle = g;
+    ctx.fill();
+  }
+
+  /** A whole ball (panels + light) drawn straight into ctx, for icons. Outline it yourself. */
+  const ball = (ctx, cx, cy, r) => (ballPanels(ctx, cx, cy, r), ballLight(ctx, cx, cy, r));
+
   /**
    * The loading line's ball, r px in radius, in two layers so it can roll: `panels` (white ball, ink
    * pentagons and seams: rotate this one) and `light` (highlight, shading and outline, which stay put).
    */
   function football(scene, r) {
     const S = Math.ceil(r * 2 + 6), c = S / 2;
-    // a point on the sphere → canvas; a point round the back is pushed out to the rim
-    const at = ([x, y, z]) => {
-      const k = z < 0 ? 1 / Math.max(1e-6, Math.hypot(x, y)) : 1;
-      return [c + x * k * r, c - y * k * r];
-    };
-    const panels = paint(scene, `kl:football:${r}`, S, S, (ctx) => {
-      circle(ctx, c, c, r);
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fill();
-      ctx.save();
-      circle(ctx, c, c, r);
-      ctx.clip();
-      ctx.strokeStyle = ctx.fillStyle = C.ink;
-      ctx.lineJoin = ctx.lineCap = 'round';
-      ctx.lineWidth = Math.max(1, r * 0.07);
-      for (const [a, b] of FOOTBALL.seams) {
-        if (a[2] + b[2] <= 0) continue;
-        ctx.beginPath();
-        ctx.moveTo(...at(a));
-        ctx.lineTo(...at(b));
-        ctx.stroke();
-      }
-      for (const p of FOOTBALL.pentagons) {
-        if (p.centre[2] < -0.25) continue;
-        ctx.beginPath();
-        p.corners.forEach((q, k) => (k ? ctx.lineTo(...at(q)) : ctx.moveTo(...at(q))));
-        ctx.closePath();
-        ctx.fill();
-        ctx.stroke();
-      }
-      ctx.restore();
-    });
+    const panels = paint(scene, `kl:football:${r}`, S, S, (ctx) => ballPanels(ctx, c, c, r));
     const light = paint(scene, `kl:football-light:${r}`, S, S, (ctx) => {
-      const g = ctx.createRadialGradient(c - r * 0.38, c - r * 0.42, r * 0.05, c, c, r * 1.02);
-      g.addColorStop(0, 'rgba(255,255,255,0.75)');
-      g.addColorStop(0.32, 'rgba(255,255,255,0)');
-      g.addColorStop(0.7, 'rgba(20,24,70,0)');
-      g.addColorStop(1, 'rgba(20,24,70,0.5)');
+      ballLight(ctx, c, c, r);
       circle(ctx, c, c, r);
-      ctx.fillStyle = g;
-      ctx.fill();
       ctx.lineWidth = Math.max(1.5, r * 0.09);
       ctx.strokeStyle = C.ink;
       ctx.stroke();
@@ -523,5 +535,5 @@ window.KL = window.KL || {};
     return { key, ox: 0.5, oy: 0.5 };
   }
 
-  KL.Paint = { C, rr, vgrad, tint, circle, stud, gloss, paint, place, button, pill, playIcon, football, panel, card, glow, fullscreenIcon };
+  KL.Paint = { C, rr, vgrad, tint, circle, stud, gloss, paint, place, button, pill, playIcon, ball, football, panel, card, glow, fullscreenIcon };
 })();

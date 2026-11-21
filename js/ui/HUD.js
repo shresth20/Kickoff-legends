@@ -19,6 +19,7 @@ KL.HUD_SCOREBOARD = {
   boxX: 96, boxW: 64, boxH: 54, // score boxes (centre x)
   plateIn: 142, plateOut: 318, plateH: 42, // name bars
   flagX: 346, flagR: 31, // flag sockets
+  nameSize: 27, // the players' names on the bars (px; a longer name shrinks to fit its bar)
   /**
    * The scoreboard art (ui:ui_hud_scoreboard): shown `w` logical px wide, its centre `y` below the
    * top safe edge. Its slots are measured on the source art, `src` px wide, in source px from its
@@ -26,7 +27,16 @@ KL.HUD_SCOREBOARD = {
    */
   art: {
     w: 740, y: 73, src: 2145,
-    flag: { x: 941, y: 3, r: 92 }, // white sockets
+    // flag sockets: the white disc is r 92.5, ringed by a navy line out to r ≥ 97.4; the flag is
+    // drawn r 94.6, over all the white and a little of the line, so no white rim shows
+    flag: { x: 941.1, y: 2.6, r: 94.6 },
+    /**
+     * The flag sprites (ui:flag_*) carry their own navy-and-gold rim, which these sockets already
+     * have, so a socket shows only the face: a circle cut from the sprite, in px of its 160-px cell.
+     * The face meets the sprite's gold at r 56.4 around (80.5, 79.7), within 0.8 px on every flag;
+     * the cut stays 2 px inside that so no gold shows.
+     */
+    flagFace: { cell: 160, x: 80.5, y: 79.7, r: 54.5 },
     name: { x: 620, y: 4, w: 340 }, // navy bars, inside the slant
     score: { x: 254, y: -14, w: 150 }, // purple boxes, on the face above the lip
     clock: { y: -32, w: 250 }, labelY: 84, labelW: 150, // gold shield
@@ -63,14 +73,11 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
     } else add(KL.Paint.place(this, 0, 0, this.paintScoreboard()));
     for (const [i, sgn] of [[0, -1], [1, 1]]) {
       const fr = `flag_${this.defs[i].flag}`;
-      if (KL.hasUiFrame(this, fr)) KL.fit(add(this.add.image(sgn * S.flagX, S.flagY, 'ui', fr)), S.flagD, S.flagD);
+      if (!KL.hasUiFrame(this, fr)) continue;
+      // the art's sockets take the bare face, filling them; the painted plate's take the whole badge
+      if (S.art) add(KL.Paint.place(this, sgn * S.flagX, S.flagY, this.flagFace(fr, S.flagD)));
+      else KL.fit(add(this.add.image(sgn * S.flagX, S.flagY, 'ui', fr)), S.flagD, S.flagD);
     }
-    add(KL.fitText(KL.bodyText(this, -S.nameX, S.nameY, this.defs[0].name, 19, '#ffffff', { weight: 'heavy' }), S.nameW));
-    add(KL.fitText(KL.bodyText(this, S.nameX, S.nameY, `CPU ${this.defs[1].name}`, 19, '#ffffff', { weight: 'heavy' }), S.nameW));
-    this.scoreL = add(KL.displayText(this, -S.scoreX, S.scoreY, '0', 40, '#ffffff'));
-    this.scoreR = add(KL.displayText(this, S.scoreX, S.scoreY, '0', 40, '#ffffff'));
-    this.clock = add(KL.displayText(this, 0, S.clockY, String(KL.TUNING.match.durationSec), 46, '#1B1F3B', { style: { stroke: '#ffffff', strokeThickness: 5, shadow: { offsetX: 0, offsetY: 0 } } }));
-    this.clockLabel = add(KL.fitText(KL.bodyText(this, 0, S.labelY, KL.t('hud_time'), 11, '#1B1F3B', { weight: 'heavy' }), S.labelW));
 
     // on-screen controller (keys shown on every button; touch / mouse playable)
     this.match = this.scene.get('Match');
@@ -80,7 +87,10 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
     this.drawers = [new KL.EmoteDrawer(this, { x: 46, y: 160, dir: 1, isLive: live, onPick: (index) => this.bus.emit('EMOTE', { player: 0, index }) })];
     this.pauseButton = new KL.Button(this, W.width - 46, 46, 'II', () => live() && this.match.togglePause(), { kind: 'icon', icon: 'ui_icons/07', width: 58, height: 58 }).setDepth(30);
 
-    this.banner = KL.displayText(this, cx, 280, '', 110, '#f5c518').setAlpha(0).setDepth(5);
+    // names, scores, clock and banner; set again in the new language if it changes mid-match (Settings
+    // opens over the pause menu while this scene keeps running underneath)
+    this.buildText();
+    KL.onLocale(this, () => this.buildText());
 
     // anchor everything to the screen; re-run on every resize / rotation
     KL.View.layout(this, (V) => this.layout(V));
@@ -114,6 +124,37 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
   }
 
   /**
+   * The HUD's words and numbers, in the current language's text and type (KL.FONTS picks the font
+   * per language, so the old Text objects can't just take new strings): the names with the
+   * opponent's "AI" tag, the scores, the clock and its label on the plate, and the goal / kickoff
+   * banner. Run again on a language change, keeping the scores and the time shown.
+   */
+  buildText() {
+    const S = this.slots;
+    const add = (o) => (this.scoreboard.add(o), o);
+    const was = this.clock && { scores: [this.scoreL.text, this.scoreR.text], clock: this.clock.text, color: this.clock.style.color };
+    for (const t of this.texts || []) {
+      this.tweens.killTweensOf(t);
+      t.destroy();
+    }
+    // the opponent's name carries the same "AI" tag as on character select
+    const nameSize = KL.HUD_SCOREBOARD.nameSize;
+    const nameL = add(KL.fitText(KL.bodyText(this, -S.nameX, S.nameY, this.defs[0].name, nameSize, '#ffffff', { weight: 'heavy' }), S.nameW));
+    const nameR = add(KL.fitText(KL.bodyText(this, S.nameX, S.nameY, `${KL.t('select_ai')} ${this.defs[1].name}`, nameSize, '#ffffff', { weight: 'heavy' }), S.nameW));
+    this.scoreL = add(KL.displayText(this, -S.scoreX, S.scoreY, '0', 40, '#ffffff'));
+    this.scoreR = add(KL.displayText(this, S.scoreX, S.scoreY, '0', 40, '#ffffff'));
+    this.clock = add(KL.displayText(this, 0, S.clockY, String(KL.TUNING.match.durationSec), 46, '#1B1F3B', { style: { stroke: '#ffffff', strokeThickness: 5, shadow: { offsetX: 0, offsetY: 0 } } }));
+    this.clockLabel = add(KL.fitText(KL.bodyText(this, 0, S.labelY, KL.t('hud_time'), 11, '#1B1F3B', { weight: 'heavy' }), S.labelW));
+    this.banner = KL.displayText(this, KL.TUNING.world.width / 2, 280, '', 110, '#f5c518').setAlpha(0).setDepth(5);
+    this.texts = [nameL, nameR, this.scoreL, this.scoreR, this.clock, this.clockLabel, this.banner];
+    if (!was) return;
+    this.setScore(this.scoreL, was.scores[0]);
+    this.setScore(this.scoreR, was.scores[1]);
+    this.clock.setText(was.clock).setColor(was.color);
+    KL.fitText(this.clock, S.clockW);
+  }
+
+  /**
    * Screen anchors: the scoreboard hangs from the top safe edge, centred; pause sits in the top-right
    * corner and the reactions button on the left edge, below the plate; the pad in the bottom corners.
    */
@@ -138,7 +179,7 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
       const A = SB.art, k = A.w / A.src;
       return {
         art: true, y: A.y,
-        flagX: A.flag.x * k, flagY: A.flag.y * k, flagD: (A.flag.r * 2 - 10) * k,
+        flagX: A.flag.x * k, flagY: A.flag.y * k, flagD: A.flag.r * 2 * k,
         nameX: A.name.x * k, nameY: A.name.y * k, nameW: A.name.w * k,
         scoreX: A.score.x * k, scoreY: A.score.y * k, scoreW: A.score.w * k,
         clockY: A.clock.y * k, clockW: A.clock.w * k, labelY: A.labelY * k, labelW: A.labelW * k,
@@ -151,6 +192,26 @@ KL.HUDScene = class HUDScene extends Phaser.Scene {
       scoreX: SB.boxX, scoreY: 0, scoreW: SB.boxW - 12,
       clockY: -9, clockW: SB.shieldW - 16, labelY: 29, labelW: SB.shieldW * 0.5,
     };
+  }
+
+  /**
+   * A flag's face alone (KL.HUD_SCOREBOARD.art.flagFace), cut to a circle d logical px across and
+   * painted once at device resolution. Returns a KL.Paint spec centred on the circle.
+   */
+  flagFace(frame, d) {
+    const fr = this.textures.getFrame('ui', frame);
+    const F = KL.HUD_SCOREBOARD.art.flagFace, s = fr.realWidth / F.cell, r = F.r * s;
+    // cell px → atlas px (fr.x, fr.y: where the trimmed frame sits in its cell)
+    const sx = fr.cutX - fr.x + F.x * s - r, sy = fr.cutY - fr.y + F.y * s - r;
+    const key = KL.Paint.paint(this, `kl:flagface:${frame}:${d.toFixed(2)}`, d, d, (ctx) => {
+      KL.Paint.circle(ctx, d / 2, d / 2, d / 2);
+      ctx.clip();
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(fr.source.image, sx, sy, r * 2, r * 2, 0, 0, d, d);
+    });
+    // the canvas is rounded up to whole device px: keep the origin on the circle's centre
+    const o = (d * KL.UIRES) / 2 / Math.ceil(d * KL.UIRES);
+    return { key, ox: o, oy: o };
   }
 
   /** One texture for the whole plate: flag sockets, slanted name bars, score boxes, timer shield. */

@@ -6,7 +6,6 @@ KL.CHARACTERS = [
     id: 'char_01',
     name: 'Rio',
     flag: 'eng',
-    tagline: 'char_01_tagline',
     stats: { speed: 3, jump: 3, power: 3 },
     kit: { primary: '#E63946', secondary: '#FFFFFF' },
     hair: '#1a1a24',
@@ -16,7 +15,6 @@ KL.CHARACTERS = [
     id: 'char_02',
     name: 'Mika',
     flag: 'jpn',
-    tagline: 'char_02_tagline',
     stats: { speed: 4, jump: 2, power: 3 },
     kit: { primary: '#2B6CF2', secondary: '#FFFFFF' },
     hair: '#2b6cf2',
@@ -26,7 +24,6 @@ KL.CHARACTERS = [
     id: 'char_03',
     name: 'Bruno',
     flag: 'bra',
-    tagline: 'char_03_tagline',
     stats: { speed: 2, jump: 4, power: 3 },
     kit: { primary: '#F5C518', secondary: '#111111' },
     hair: '#3dd36a',
@@ -36,7 +33,6 @@ KL.CHARACTERS = [
     id: 'char_04',
     name: 'Ace',
     flag: 'esp',
-    tagline: 'char_04_tagline',
     stats: { speed: 3, jump: 2, power: 4 },
     kit: { primary: '#FFFFFF', secondary: '#7B3FE4' },
     hair: '#f2e7c9',
@@ -67,16 +63,25 @@ KL.CHARACTER_ANIMS = [
   { key: 'kick_low', frames: 6, fps: 16, frameMs: [32, 33, 75, 70, 60, 55], loop: false, hitFrames: [2, 3], recoverFrame: 4 },
   { key: 'kick_high', frames: 6, fps: 16, frameMs: [33, 34, 80, 75, 65, 55], loop: false, hitFrames: [2, 3], recoverFrame: 4 },
   { key: 'header', frames: 5, fps: 16, frameMs: [33, 60, 70, 70, 70], loop: false, hitFrames: [1, 2], exact: true },
-  { key: 'super', frames: 6, fps: 12, loop: false, hitFrames: [3, 4], exact: true },
+  // the super: stance, crouch into the aura, full aura (the charge), leap, the flying kick, land. The frames
+  // before releaseFrame fill the charge (KL.TUNING.super.chargeMs, see KL.charFrameMs), so the kick frame is
+  // on screen the moment the shot is released, and it is the frame that strikes (it used to strike on the
+  // leap, mid-charge, and the 12 fps strip had the player standing back up when the ball left)
+  { key: 'super', frames: 6, fps: 12, frameMs: [70, 120, 160, 100, 140, 160], releaseFrame: 4, loop: false, hitFrames: [4], exact: true },
   { key: 'hurt', frames: 3, fps: 10, loop: false },
   { key: 'celebrate', frames: 6, fps: 10, loop: true },
   { key: 'lose', frames: 4, fps: 8, loop: false },
 ];
 
-/** A state's per-frame durations in ms as played (frameMs states), with the pace applied where it may be. */
+/** A state's per-frame durations in ms as played (frameMs states), with the pace applied where it may be.
+ * releaseFrame (the super): the frames before it are scaled to add up to the super's charge exactly. */
 KL.charFrameMs = (a) => {
   const pace = a.exact ? 1 : KL.animPace();
-  return a.frameMs.map((ms, i) => (a.recoverFrame !== undefined && i >= a.recoverFrame ? ms / pace : ms));
+  const ms = a.frameMs.map((v, i) => (a.recoverFrame !== undefined && i >= a.recoverFrame ? v / pace : v));
+  const charge = KL.TUNING?.super?.chargeMs;
+  if (a.releaseFrame === undefined || !charge) return ms;
+  const before = ms.slice(0, a.releaseFrame).reduce((s, v) => s + v, 0);
+  return ms.map((v, i) => (i < a.releaseFrame ? (v * charge) / before : v));
 };
 /** A state's frame rate as played. */
 KL.charFps = (a) => (a.exact || a.frameMs ? a.fps : a.fps * KL.animPace());

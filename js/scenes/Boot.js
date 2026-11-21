@@ -141,6 +141,8 @@ KL.BootScene = class BootScene extends Phaser.Scene {
     }
     // the welcome screen: backdrop, logo and the logo's spinning football (tools/make-welcome.mjs)
     for (const key of ['welcome_bg', 'welcome_logo', 'welcome_ball', 'welcome_ball_light']) this.load.image(key, `${img}/welcome/${key}.webp`);
+    // the controller's buttons (tools/make-pad.mjs; without them js/ui/TouchControls.js paints its own)
+    if (window.KL_PAD_ART) this.load.image('pad_art', `${img}/pad/pad.webp`);
   }
 
   create() {
